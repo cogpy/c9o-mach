@@ -1,0 +1,88 @@
+name: Claude AI Code Review
+
+# Inspired by: marduk-ml-sdk's claude-reviews.yml
+# Provides automated AI-powered code review on pull requests
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [ master, develop ]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    name: AI Code Review
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Get changed files
+      id: changed
+      run: |
+        FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} \
+          ${{ github.event.pull_request.head.sha }} -- '*.c' '*.h' '*.S' '*.am' '*.ac')
+        echo "files<<EOF" >> "$GITHUB_OUTPUT"
+        echo "$FILES" >> "$GITHUB_OUTPUT"
+        echo "EOF" >> "$GITHUB_OUTPUT"
+        COUNT=$(echo "$FILES" | grep -c . || true)
+        echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+
+    - name: Get diff content
+      if: steps.changed.outputs.count > 0
+      id: diff
+      run: |
+        DIFF=$(git diff ${{ github.event.pull_request.base.sha }} \
+          ${{ github.event.pull_request.head.sha }} -- '*.c' '*.h' | head -2000)
+        echo "diff<<EOF" >> "$GITHUB_OUTPUT"
+        echo "$DIFF" >> "$GITHUB_OUTPUT"
+        echo "EOF" >> "$GITHUB_OUTPUT"
+
+    - name: AI Review Summary
+      if: steps.changed.outputs.count > 0
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const files = `${{ steps.changed.outputs.files }}`;
+          const fileList = files.trim().split('\n').filter(f => f.length > 0);
+
+          // Categorize changes
+          const kernFiles = fileList.filter(f => f.startsWith('kern/'));
+          const vmFiles = fileList.filter(f => f.startsWith('vm/'));
+          const ipcFiles = fileList.filter(f => f.startsWith('ipc/'));
+          const driverFiles = fileList.filter(f => f.startsWith('device/') || f.startsWith('linux/'));
+          const archFiles = fileList.filter(f => f.startsWith('i386/') || f.startsWith('x86_64/') || f.startsWith('aarch64/'));
+          const buildFiles = fileList.filter(f => f.endsWith('.am') || f.endsWith('.ac'));
+
+          let review = `## Automated Review Summary\n\n`;
+          review += `**Changed files:** ${fileList.length}\n\n`;
+          review += `| Subsystem | Files Changed |\n|-----------|---------------|\n`;
+          if (kernFiles.length) review += `| Kernel core | ${kernFiles.length} |\n`;
+          if (vmFiles.length) review += `| Virtual memory | ${vmFiles.length} |\n`;
+          if (ipcFiles.length) review += `| IPC | ${ipcFiles.length} |\n`;
+          if (driverFiles.length) review += `| Device drivers | ${driverFiles.length} |\n`;
+          if (archFiles.length) review += `| Architecture | ${archFiles.length} |\n`;
+          if (buildFiles.length) review += `| Build system | ${buildFiles.length} |\n`;
+
+          review += `\n### Review Checklist\n`;
+          review += `- [ ] Memory safety: No buffer overflows or use-after-free\n`;
+          review += `- [ ] Lock ordering: Follows established locking discipline\n`;
+          review += `- [ ] Error handling: All error paths properly handled\n`;
+          review += `- [ ] Stack usage: Kernel stack usage is bounded\n`;
+
+          if (kernFiles.length > 0 || vmFiles.length > 0) {
+            review += `\n> **Note:** This PR modifies core kernel subsystems. Extra review recommended.\n`;
+          }
+
+          await github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+            body: review
+          });

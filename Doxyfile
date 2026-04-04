@@ -1,0 +1,70 @@
+# Doxygen API Documentation Configuration
+# Inspired by: lustre's Doxygen API documentation generation
+#
+# Generate with: doxygen Doxyfile
+# Output: docs/api/html/
+
+PROJECT_NAME           = "GNU Mach (c9o-mach)"
+PROJECT_NUMBER         = 1.8
+PROJECT_BRIEF          = "Modern microkernel for the GNU Hurd operating system"
+OUTPUT_DIRECTORY       = docs/api
+
+# Input configuration
+INPUT                  = kern vm ipc device include i386/include x86_64
+INPUT_ENCODING         = UTF-8
+FILE_PATTERNS          = *.c *.h
+RECURSIVE              = YES
+EXCLUDE_PATTERNS       = */linux/* */build-*
+
+# Extraction settings
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = YES
+EXTRACT_LOCAL_CLASSES  = YES
+
+# Source browsing
+SOURCE_BROWSER         = YES
+INLINE_SOURCES         = NO
+STRIP_CODE_COMMENTS    = YES
+REFERENCED_BY_RELATION = YES
+REFERENCES_RELATION    = YES
+
+# Documentation output
+GENERATE_HTML          = YES
+HTML_OUTPUT            = html
+HTML_COLORSTYLE        = LIGHT
+GENERATE_TREEVIEW      = YES
+SEARCHENGINE           = YES
+GENERATE_LATEX         = NO
+GENERATE_MAN           = NO
+
+# Diagrams
+HAVE_DOT               = YES
+DOT_IMAGE_FORMAT       = svg
+INTERACTIVE_SVG        = YES
+CALL_GRAPH             = YES
+CALLER_GRAPH           = YES
+DOT_GRAPH_MAX_NODES    = 100
+MAX_DOT_GRAPH_DEPTH    = 4
+
+# Cross-referencing
+TAGFILES               =
+GENERATE_TAGFILE       = docs/api/c9o-mach.tag
+
+# Preprocessing
+ENABLE_PREPROCESSING   = YES
+MACRO_EXPANSION        = YES
+PREDEFINED             = __i386__ \
+                         __x86_64__ \
+                         MACH_KERNEL \
+                         NCPUS=4 \
+                         MACH_IPC_COMPAT=1
+
+# Warnings
+WARN_IF_UNDOCUMENTED   = NO
+WARN_IF_DOC_ERROR      = YES
+QUIET                  = YES
+
+# Optimization
+OPTIMIZE_OUTPUT_FOR_C  = YES
+TYPEDEF_HIDES_STRUCT   = YES
