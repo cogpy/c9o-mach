@@ -1,0 +1,25 @@
+# Valgrind Suppression File for c9o-mach
+# Inspired by: diod's Valgrind integration
+#
+# Suppress known false positives in kernel test infrastructure.
+
+{
+   glibc-ld-suppression
+   Memcheck:Leak
+   ...
+   obj:*/ld-*.so
+}
+
+{
+   glibc-dl-suppression
+   Memcheck:Leak
+   ...
+   fun:_dl_*
+}
+
+{
+   qemu-internal
+   Memcheck:Leak
+   ...
+   obj:*/qemu*
+}

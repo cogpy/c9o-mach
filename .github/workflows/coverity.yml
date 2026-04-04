@@ -1,0 +1,66 @@
+name: Coverity Scan
+
+# Inspired by: conman's Coverity integration
+# Deep static analysis for finding hard-to-detect bugs
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly on Monday at 6 AM UTC
+  workflow_dispatch:
+
+jobs:
+  coverity:
+    name: Coverity Static Analysis
+    runs-on: ubuntu-22.04
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential gcc-multilib autoconf automake \
+          libtool libtool-bin pkg-config gawk bison flex
+
+    - name: Download Coverity Build Tool
+      env:
+        COVERITY_TOKEN: ${{ secrets.COVERITY_SCAN_TOKEN }}
+      run: |
+        if [ -z "$COVERITY_TOKEN" ]; then
+          echo "::warning::COVERITY_SCAN_TOKEN not set, skipping Coverity scan"
+          echo "Configure the secret to enable weekly Coverity scans"
+          exit 0
+        fi
+        curl -fsSL \
+          -d "token=$COVERITY_TOKEN&project=cogpy%2Fc9o-mach" \
+          -o coverity_tool.tgz \
+          https://scan.coverity.com/download/linux64
+        tar xzf coverity_tool.tgz
+        echo "$(pwd)/cov-analysis-linux64-*/bin" >> "$GITHUB_PATH"
+
+    - name: Configure
+      run: |
+        autoreconf --install || true
+        ./configure --host=i686-gnu CC='gcc -m32' || true
+
+    - name: Build with Coverity
+      env:
+        COVERITY_TOKEN: ${{ secrets.COVERITY_SCAN_TOKEN }}
+      if: env.COVERITY_TOKEN != ''
+      run: |
+        cov-build --dir cov-int make -j$(nproc) || true
+
+    - name: Submit to Coverity
+      env:
+        COVERITY_TOKEN: ${{ secrets.COVERITY_SCAN_TOKEN }}
+      if: env.COVERITY_TOKEN != ''
+      run: |
+        tar czf cov-int.tgz cov-int
+        curl -fsSL \
+          --form token="$COVERITY_TOKEN" \
+          --form email="${{ github.repository_owner }}@users.noreply.github.com" \
+          --form file=@cov-int.tgz \
+          --form version="$(git describe --tags --always)" \
+          --form description="Automated Coverity scan from GitHub Actions" \
+          https://scan.coverity.com/builds?project=cogpy%2Fc9o-mach

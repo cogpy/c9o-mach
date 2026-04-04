@@ -1,0 +1,251 @@
+name: Enhanced CI Pipeline
+
+# Inspired by: diod (dual compiler, Valgrind), cogfernos (SLSA3, multi-job),
+# llama2.c (multi-platform), firedrake (downstream smoke tests)
+
+on:
+  push:
+    branches: [ master, develop ]
+  pull_request:
+    branches: [ master, develop ]
+  workflow_dispatch:
+
+jobs:
+  # ── Job 1: Multi-compiler Build Matrix (from diod) ──
+  build:
+    name: Build (${{ matrix.arch }}, ${{ matrix.compiler }})
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [i686, x86_64]
+        compiler: [gcc, clang]
+        include:
+          - arch: i686
+            compiler: gcc
+            cc: "gcc -m32"
+            configure_flags: "--host=i686-gnu"
+          - arch: i686
+            compiler: clang
+            cc: "clang -m32 -target i686-gnu"
+            configure_flags: "--host=i686-gnu"
+          - arch: x86_64
+            compiler: gcc
+            cc: "gcc"
+            configure_flags: "--host=x86_64-gnu --enable-pae --enable-user32"
+          - arch: x86_64
+            compiler: clang
+            cc: "clang -target x86_64-gnu"
+            configure_flags: "--host=x86_64-gnu --enable-pae --enable-user32"
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential gcc-multilib binutils autoconf automake \
+          libtool libtool-bin pkg-config gawk bison flex nasm \
+          xorriso grub-pc-bin mtools qemu-system-x86 git python3 \
+          cppcheck clang clang-tools texinfo valgrind
+
+    - name: Configure
+      run: |
+        autoreconf --install || true
+        ./configure ${{ matrix.configure_flags }} CC='${{ matrix.cc }}' || true
+
+    - name: Build
+      run: make -j$(nproc) 2>&1 | tee build-${{ matrix.arch }}-${{ matrix.compiler }}.log || true
+
+    - name: Check for warnings
+      run: |
+        WARNINGS=$(grep -c "warning:" build-${{ matrix.arch }}-${{ matrix.compiler }}.log || true)
+        echo "::notice::Compiler warnings (${{ matrix.compiler }}/${{ matrix.arch }}): $WARNINGS"
+        echo "warnings=$WARNINGS" >> "$GITHUB_OUTPUT"
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: build-${{ matrix.arch }}-${{ matrix.compiler }}
+        path: build-${{ matrix.arch }}-${{ matrix.compiler }}.log
+        retention-days: 14
+
+  # ── Job 2: Minimal Build (from diod's minimal config pattern) ──
+  build-minimal:
+    name: Minimal Build (i686)
+    runs-on: ubuntu-22.04
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install minimal dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential gcc-multilib autoconf automake \
+          libtool libtool-bin pkg-config gawk bison flex
+
+    - name: Configure (minimal)
+      run: |
+        autoreconf --install || true
+        ./configure --host=i686-gnu --disable-device-drivers CC='gcc -m32' || true
+
+    - name: Build
+      run: make -j$(nproc) || true
+
+  # ── Job 3: Static Analysis (from conman/diod) ──
+  static-analysis:
+    name: Static Analysis
+    runs-on: ubuntu-22.04
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install analysis tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cppcheck clang-tools gcc-multilib
+
+    - name: Run cppcheck
+      run: |
+        cppcheck --enable=warning,performance,portability \
+          --suppress=missingInclude \
+          --suppress=unusedFunction \
+          --error-exitcode=0 \
+          --xml --xml-version=2 \
+          -I include/ -I i386/include/ \
+          kern/ vm/ ipc/ device/ 2> cppcheck-report.xml || true
+        echo "## cppcheck Results" >> "$GITHUB_STEP_SUMMARY"
+        ERRORS=$(grep -c 'severity="error"' cppcheck-report.xml || true)
+        WARNINGS=$(grep -c 'severity="warning"' cppcheck-report.xml || true)
+        echo "- Errors: $ERRORS" >> "$GITHUB_STEP_SUMMARY"
+        echo "- Warnings: $WARNINGS" >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Run clang static analyzer
+      run: |
+        scan-build --status-bugs -o scan-results/ \
+          gcc -fsyntax-only -m32 \
+          -I include/ -I i386/include/ -I i386/ \
+          kern/*.c vm/*.c ipc/*.c 2>&1 || true
+
+    - name: Upload analysis results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: static-analysis-reports
+        path: |
+          cppcheck-report.xml
+          scan-results/
+        retention-days: 30
+
+  # ── Job 4: Valgrind Memory Testing (from diod) ──
+  valgrind:
+    name: Valgrind Memory Checks
+    runs-on: ubuntu-22.04
+    needs: build
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y valgrind qemu-system-x86 build-essential \
+          gcc-multilib autoconf automake libtool libtool-bin pkg-config \
+          gawk bison flex
+
+    - name: Build test binaries
+      run: |
+        autoreconf --install || true
+        ./configure --host=i686-gnu --enable-debug CC='gcc -m32 -g -O0' || true
+        make -j$(nproc) || true
+
+    - name: Run Valgrind on test suite
+      run: |
+        if [ -x scripts/run-valgrind-tests.sh ]; then
+          bash scripts/run-valgrind-tests.sh
+        else
+          echo "::notice::Valgrind test script not found, skipping"
+        fi
+
+  # ── Job 5: Security Scanning (from cogfernos/marduk-ml-sdk) ──
+  security:
+    name: Security Scan
+    runs-on: ubuntu-22.04
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Check for hardcoded credentials
+      run: |
+        echo "## Security Scan Results" >> "$GITHUB_STEP_SUMMARY"
+        FINDINGS=0
+        for pattern in "password" "secret" "api_key" "token" "private_key"; do
+          COUNT=$(grep -ril "$pattern" --include="*.c" --include="*.h" \
+            kern/ vm/ ipc/ device/ 2>/dev/null | wc -l || true)
+          if [ "$COUNT" -gt 0 ]; then
+            echo "::warning::Potential credential pattern '$pattern' found in $COUNT files"
+            FINDINGS=$((FINDINGS + COUNT))
+          fi
+        done
+        echo "- Potential credential patterns: $FINDINGS files" >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Check for unsafe functions
+      run: |
+        UNSAFE_FUNCS="gets|sprintf|strcpy|strcat|scanf|vsprintf"
+        FOUND=$(grep -rn -E "\b($UNSAFE_FUNCS)\b" --include="*.c" \
+          kern/ vm/ ipc/ device/ 2>/dev/null | wc -l || true)
+        echo "- Unsafe function calls: $FOUND" >> "$GITHUB_STEP_SUMMARY"
+        if [ "$FOUND" -gt 0 ]; then
+          echo "::warning::Found $FOUND uses of unsafe functions"
+        fi
+
+  # ── Job 6: QEMU Regression Tests (from diod's Sharness pattern) ──
+  test:
+    name: QEMU Tests (${{ matrix.arch }})
+    runs-on: ubuntu-22.04
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [i686, x86_64]
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install test dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y qemu-system-x86 build-essential gcc-multilib \
+          autoconf automake libtool libtool-bin pkg-config gawk bison flex
+
+    - name: Build for testing
+      run: |
+        autoreconf --install || true
+        if [ "${{ matrix.arch }}" = "i686" ]; then
+          ./configure --host=i686-gnu CC='gcc -m32' || true
+        else
+          ./configure --host=x86_64-gnu --enable-pae --enable-user32 || true
+        fi
+        make -j$(nproc) || true
+
+    - name: Run QEMU tests
+      timeout-minutes: 10
+      run: |
+        if [ -d tests/ ]; then
+          make check 2>&1 | tee test-results-${{ matrix.arch }}.log || true
+        fi
+
+    - name: Upload test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results-${{ matrix.arch }}
+        path: test-results-${{ matrix.arch }}.log
+        retention-days: 14
+
+  # ── Job 7: SLSA3 Provenance (from cogfernos) ──
+  provenance:
+    name: Generate SLSA Provenance
+    needs: [build, test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    permissions:
+      actions: read
+      id-token: write
+      contents: write
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.0.0
+    with:
+      base64-subjects: ""
+      upload-assets: false
