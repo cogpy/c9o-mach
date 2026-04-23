@@ -90,7 +90,7 @@ perf_counters_init(void)
     /* Initialize trend history */
     memset(&trend_history, 0, sizeof(trend_history));
     
-    simple_lock_irq_init(&perf_state.lock);
+    simple_lock_init_irq(&perf_state.lock);
     perf_state.initialized = TRUE;
     perf_state.last_snapshot_time = now;
     perf_state.snapshot_count = 0;

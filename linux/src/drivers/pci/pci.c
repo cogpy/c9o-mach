@@ -1361,38 +1361,10 @@ unsigned long pci_init (unsigned long mem_start, unsigned long mem_end)
 
 /*
  * PCIe capability functions
+ *
+ * pci_find_capability() lives in drivers/net/pci-scan.c so it can be shared
+ * with the net drivers; we don't redefine it here.
  */
-int pci_find_capability(struct pci_dev *dev, int cap)
-{
-	u16 status;
-	u8 pos, id;
-	int ttl = 48;
-
-	if (pcibios_read_config_word(dev->bus->number, dev->devfn, 
-				     PCI_STATUS, &status) != PCIBIOS_SUCCESSFUL)
-		return 0;
-
-	if (!(status & PCI_STATUS_CAP_LIST))
-		return 0;
-
-	if (pcibios_read_config_byte(dev->bus->number, dev->devfn, 
-				     PCI_CAPABILITY_LIST, &pos) != PCIBIOS_SUCCESSFUL)
-		return 0;
-
-	while (ttl-- && pos >= 0x40) {
-		pos &= ~3;
-		if (pcibios_read_config_byte(dev->bus->number, dev->devfn, 
-					     pos + PCI_CAP_LIST_ID, &id) != PCIBIOS_SUCCESSFUL)
-			return 0;
-		if (id == cap)
-			return pos;
-		if (pcibios_read_config_byte(dev->bus->number, dev->devfn, 
-					     pos + PCI_CAP_LIST_NEXT, &pos) != PCIBIOS_SUCCESSFUL)
-			return 0;
-	}
-	return 0;
-}
-
 int pci_find_ext_capability(struct pci_dev *dev, int cap)
 {
 	u32 header;
