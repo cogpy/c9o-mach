@@ -107,17 +107,30 @@ setup_mig() {
     local arch=$1
     log "Setting up MIG (Mach Interface Generator) for target $arch..."
 
-    # migcom bakes the size of user-space types (pointer width, ABI alignment)
-    # into its generated stubs via cpu.h. The sizes come from compiling
-    # mig/cpu.sym with ${TARGET_CC}. If migcom is built with the host
-    # compiler (x86_64 by default) but used to generate stubs for a kernel
-    # whose user ABI is 32-bit (i686, or x86_64 with --enable-user32), the
-    # _Static_assert()s in the generated *.user.c files fail at compile time.
-    #
-    # Both supported targets here talk to a 32-bit user ABI, so build migcom
-    # with `gcc -m32` regardless of the kernel matrix arch.
-    local target_cc="gcc -m32"
-    local target_cflags="-m32"
+    # migcom bakes the size of kernel types (pointer width, ABI alignment) into
+    # its generated stubs via cpu.h. The sizes come from compiling mig/cpu.sym
+    # with ${TARGET_CC}. The kernel-side *.user.c stubs (compiled into gnumach
+    # itself) dereference real kernel pointers, so cpu.h must match the
+    # *kernel* ABI of the matrix arch -- not the user ABI. Mismatched builds
+    # trip _Static_assert()s like "expected ipc_port_t to be size N" at
+    # compile time.
+    local target_cc target_cflags expected_ptr
+    case "$arch" in
+        i686)
+            target_cc="gcc -m32"
+            target_cflags="-m32"
+            expected_ptr=4
+            ;;
+        x86_64)
+            target_cc="gcc"
+            target_cflags=""
+            expected_ptr=8
+            ;;
+        *)
+            error "❌ Unsupported arch for MIG: $arch"
+            exit 1
+            ;;
+    esac
 
     # Setup mach headers (tensor coordinate: [headers, setup])
     log "📁 Setting up Mach headers for MIG build..."
@@ -154,10 +167,9 @@ setup_mig() {
         exit 1
     fi
 
-    # Sanity-check the generated cpu.h reflects the target ABI (4-byte pointers
-    # for our 32-bit user ABI targets).
-    if ! grep -q '^#define sizeof_pointer 4$' cpu.h; then
-        error "❌ MIG cpu.h does not reflect a 32-bit target ABI:"
+    # Sanity-check the generated cpu.h reflects the target kernel ABI.
+    if ! grep -q "^#define sizeof_pointer ${expected_ptr}\$" cpu.h; then
+        error "❌ MIG cpu.h does not reflect the ${arch} kernel ABI (expected sizeof_pointer=${expected_ptr}):"
         grep -E 'sizeof_pointer|desired_complex_alignof' cpu.h || true
         exit 1
     fi
