@@ -104,62 +104,69 @@ check_dependencies() {
 }
 
 setup_mig() {
-    log "Setting up MIG (Mach Interface Generator)..."
-    
-    # Cognitive Flow: [check_existing] → [build_from_source] → [validate_installation]
-    # Tensor Dimension: [mig_setup_matrix[headers, build, install, validate]]
-    
-    if command -v mig &> /dev/null; then
-        log "MIG already available: $(which mig)"
-        # Validate existing MIG functionality (tensor: [existing_mig, validation])
-        if mig -version &> /dev/null || mig --help &> /dev/null; then
-            log "✅ Existing MIG is functional"
-            return 0
-        else
-            warn "⚠️  Existing MIG found but not functional, rebuilding..."
-        fi
-    fi
-    
-    log "🏗️  Building MIG from source (cognitive tensor: [source_build, headers, install])..."
-    
+    local arch=$1
+    log "Setting up MIG (Mach Interface Generator) for target $arch..."
+
+    # migcom bakes the size of user-space types (pointer width, ABI alignment)
+    # into its generated stubs via cpu.h. The sizes come from compiling
+    # mig/cpu.sym with ${TARGET_CC}. If migcom is built with the host
+    # compiler (x86_64 by default) but used to generate stubs for a kernel
+    # whose user ABI is 32-bit (i686, or x86_64 with --enable-user32), the
+    # _Static_assert()s in the generated *.user.c files fail at compile time.
+    #
+    # Both supported targets here talk to a 32-bit user ABI, so build migcom
+    # with `gcc -m32` regardless of the kernel matrix arch.
+    local target_cc="gcc -m32"
+    local target_cflags="-m32"
+
     # Setup mach headers (tensor coordinate: [headers, setup])
     log "📁 Setting up Mach headers for MIG build..."
     sudo mkdir -p /usr/include/mach
     sudo cp -r "${PROJECT_ROOT}/include/mach"/* /usr/include/mach/
-    sudo ln -sf "${PROJECT_ROOT}/i386/include/mach/i386" /usr/include/mach/machine
-    
+    sudo ln -sfn "${PROJECT_ROOT}/i386/include/mach/i386" /usr/include/mach/machine
+
     # Validate header setup (tensor coordinate: [headers, validation])
     if [ ! -d "/usr/include/mach" ] || [ ! -L "/usr/include/mach/machine" ]; then
         error "❌ MIG header setup failed"
         exit 1
     fi
     log "✅ Mach headers configured successfully"
-    
-    # Build MIG with timeout protection (tensor coordinate: [build, timeout_protected])
-    log "🔨 Building MIG with timeout protection..."
+
+    log "🏗️  Building MIG from source with TARGET_CC='${target_cc}'..."
     cd "${PROJECT_ROOT}/mig"
-    
-    # MIG build pipeline with error handling
+
+    # Force a clean rebuild so cpu.h reflects the target ABI sizes.
+    make distclean 2>/dev/null || true
+    rm -f cpu.h cpu.sym[co] migcom
+
     if ! autoreconf --install; then
         error "❌ MIG autoreconf failed"
         exit 1
     fi
-    
+
     if ! ./configure CPPFLAGS="-I/usr/include"; then
         error "❌ MIG configure failed"
         exit 1
     fi
-    
-    if ! timeout 300 make -j$(nproc); then
+
+    if ! timeout 300 make -j"$(nproc)" TARGET_CC="${target_cc}" TARGET_CFLAGS="${target_cflags}"; then
         error "❌ MIG build failed or timed out (300s limit)"
         exit 1
     fi
-    
+
+    # Sanity-check the generated cpu.h reflects the target ABI (4-byte pointers
+    # for our 32-bit user ABI targets).
+    if ! grep -q '^#define sizeof_pointer 4$' cpu.h; then
+        error "❌ MIG cpu.h does not reflect a 32-bit target ABI:"
+        grep -E 'sizeof_pointer|desired_complex_alignof' cpu.h || true
+        exit 1
+    fi
+
     if ! sudo make install; then
         error "❌ MIG installation failed"
         exit 1
     fi
-    
+
     cd "${PROJECT_ROOT}"
     
     # Post-installation validation (tensor coordinate: [installation, validation])
@@ -336,7 +343,7 @@ main() {
     cd "$PROJECT_ROOT"
     
     check_dependencies
-    setup_mig
+    setup_mig "$arch"
     configure_build "$arch" "$clean" "$debug"
     build_kernel "$arch" "$force_build"
     
