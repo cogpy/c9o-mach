@@ -122,7 +122,11 @@
 #include <kern/printf.h>
 #include <mach/boolean.h>
 #include <mach/time_value.h>
-#include <kern/mach_clock.h>
+/*
+ * Forward-declare `uptime` (defined in kern/mach_clock.c) rather than pulling
+ * in <kern/mach_clock.h>, which is not exported to the user-space test build.
+ */
+extern time_value64_t uptime;
 #include <kern/host.h>
 #include <kern/constants.h>
 #include <kern/lock.h>

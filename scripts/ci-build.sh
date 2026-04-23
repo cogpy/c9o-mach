@@ -237,7 +237,9 @@ configure_build() {
     esac
     
     log "Running configure with flags: $configure_flags"
-    eval "../configure $configure_flags MIG='mig' CFLAGS='$cflags'"
+    # USER_MIG must be set explicitly because configure's AC_CHECK_PROG only
+    # falls back to `mig` when host == build; we always pass --host=…-gnu.
+    eval "../configure $configure_flags MIG='mig' USER_MIG='mig' CFLAGS='$cflags'"
     
     cd ..
 }
