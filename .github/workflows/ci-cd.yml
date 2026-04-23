@@ -154,10 +154,10 @@ jobs:
           echo "🛠️  Actionable fix: Check compilation errors in build-${{ matrix.arch }}"
           exit 1
         fi
-        cd ..
         echo "✅ Build validation successful"
         
         # Step 2: make run-hello validation (tensor coordinate: [2, hello_test])
+        # Run from build directory where the Makefile target lives
         echo "📊 Validation Step 2/4: Basic functionality test (tensor: [2, hello_test])"
         if ! timeout 300 make run-hello; then
           echo "❌ CRITICAL ERROR: Basic hello test failed"
@@ -165,6 +165,8 @@ jobs:
           exit 1
         fi
         echo "✅ Basic functionality test passed"
+        
+        cd ..
         
         # Step 3: Static analysis validation (tensor coordinate: [3, static_analysis])
         echo "📊 Validation Step 3/4: Static analysis (tensor: [3, analysis_validation])"

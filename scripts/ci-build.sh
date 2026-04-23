@@ -232,11 +232,10 @@ build_kernel() {
     cd "build-${arch}"
     
     if [[ "$force_build" == "true" ]]; then
-        # Try to build, but don't fail on MIG assertion errors
-        make -j$(nproc) || {
-            warn "Build had issues, but continuing as requested"
-            return 0
-        }
+        if ! make -j$(nproc); then
+            warn "Build had errors (force-build mode, continuing)"
+            warn "Check build output above for details"
+        fi
     else
         make -j$(nproc)
     fi
@@ -246,8 +245,12 @@ build_kernel() {
         file gnumach
         ls -lh gnumach
     else
-        error "Build failed: gnumach not found"
-        exit 1
+        if [[ "$force_build" == "true" ]]; then
+            warn "gnumach binary not produced (force-build mode)"
+        else
+            error "Build failed: gnumach not found"
+            exit 1
+        fi
     fi
     
     cd ..
@@ -258,6 +261,8 @@ run_tests() {
     
     log "Running tests for $arch..."
     
+    cd "build-${arch}"
+    
     # Basic smoke tests
     log "Running basic functionality tests..."
     timeout 300 make run-hello || warn "hello test had issues: exit code $?"
@@ -267,6 +272,8 @@ run_tests() {
         timeout 300 make run-mach_port || warn "mach_port test had issues: exit code $?"
         timeout 300 make run-console-timestamps || warn "console-timestamps test had issues: exit code $?"
     fi
+    
+    cd ..
 }
 
 run_analysis() {
