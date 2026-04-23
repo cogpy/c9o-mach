@@ -116,6 +116,9 @@ TESTCFLAGS = -static -nostartfiles -nolibc \
 	-I. \
 	-I$(srcdir) \
 	-I$(srcdir)/$(systype) \
+	-I$(srcdir)/i386 \
+	-I$(srcdir)/i386/i386 \
+	-I$(srcdir)/i386/include/mach/sa \
 	-I$(MACH_TESTINCLUDE) \
 	-I$(MIG_OUTDIR) \
 	-ggdb3 \
