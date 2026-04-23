@@ -364,6 +364,7 @@ jobs:
           "make run-console-timestamps:Console timestamp test"
         )
         
+        cd build-${{ matrix.arch }}
         for test_spec in "${TEST_COMMANDS[@]}"; do
           IFS=':' read -r test_cmd test_desc <<< "$test_spec"
           echo "🧪 Executing: $test_desc"
@@ -375,6 +376,7 @@ jobs:
             echo "🔍 Test may be flaky in CI environment - logged for analysis"
           fi
         done
+        cd ..
         
         echo "🎯 Test pipeline execution completed"
         
