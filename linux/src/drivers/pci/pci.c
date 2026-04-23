@@ -1360,10 +1360,29 @@ unsigned long pci_init (unsigned long mem_start, unsigned long mem_end)
 }
 
 /*
+ *  Search PCI configuration space for the specified capability registers.
+ *  Return the index, or 0 on failure. Shared with the net drivers.
+ */
+int pci_find_capability(struct pci_dev *pdev, int findtype)
+{
+	u16 pci_status, cap_type;
+	u8 pci_cap_idx;
+	int cap_idx;
+
+	pci_read_config_word(pdev, PCI_STATUS, &pci_status);
+	if (!(pci_status & PCI_STATUS_CAP_LIST))
+		return 0;
+	pci_read_config_byte(pdev, PCI_CAPABILITY_LIST, &pci_cap_idx);
+	for (cap_idx = pci_cap_idx; cap_idx; cap_idx = (cap_type >> 8) & 0xff) {
+		pci_read_config_word(pdev, cap_idx, &cap_type);
+		if ((cap_type & 0xff) == findtype)
+			return cap_idx;
+	}
+	return 0;
+}
+
+/*
  * PCIe capability functions
- *
- * pci_find_capability() lives in drivers/net/pci-scan.c so it can be shared
- * with the net drivers; we don't redefine it here.
  */
 int pci_find_ext_capability(struct pci_dev *dev, int cap)
 {

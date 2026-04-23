@@ -46,6 +46,9 @@
 #ifndef LINUX_PCI_H
 #define LINUX_PCI_H
 
+/* Prototypes below use u8/u16/u32, so pull in the fixed-width types. */
+#include <linux/types.h>
+
 /*
  * Under PCI, each device has 256 bytes of configuration address space,
  * of which the first 64 bytes are standardized as follows:
