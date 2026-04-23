@@ -1368,12 +1368,15 @@ int pci_find_capability(struct pci_dev *pdev, int findtype)
 	u16 pci_status, cap_type;
 	u8 pci_cap_idx;
 	int cap_idx;
+	int ttl = 48;
 
 	pci_read_config_word(pdev, PCI_STATUS, &pci_status);
 	if (!(pci_status & PCI_STATUS_CAP_LIST))
 		return 0;
 	pci_read_config_byte(pdev, PCI_CAPABILITY_LIST, &pci_cap_idx);
-	for (cap_idx = pci_cap_idx; cap_idx; cap_idx = (cap_type >> 8) & 0xff) {
+	for (cap_idx = pci_cap_idx; cap_idx >= 0x40 && ttl--;
+	     cap_idx = (cap_type >> 8) & 0xff) {
+		cap_idx &= ~3;
 		pci_read_config_word(pdev, cap_idx, &cap_type);
 		if ((cap_type & 0xff) == findtype)
 			return cap_idx;
