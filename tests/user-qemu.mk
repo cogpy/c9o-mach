@@ -113,7 +113,9 @@ TEST_FAILURE_MARKER = gnumach-test-failure
 TESTCFLAGS = -static -nostartfiles -nolibc \
 	-ffreestanding \
 	-I$(srcdir)/tests/include \
+	-I. \
 	-I$(srcdir) \
+	-I$(srcdir)/$(systype) \
 	-I$(MACH_TESTINCLUDE) \
 	-I$(MIG_OUTDIR) \
 	-ggdb3 \
