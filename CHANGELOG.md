@@ -5,6 +5,24 @@ All notable changes to the c9o-mach project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1](https://github.com/cogpy/c9o-mach/compare/v1.0.0...v1.0.1) (2026-04-24)
+
+
+### Bug Fixes
+
+* **ci,mig:** build migcom with 32-bit TARGET_CC per target arch ([fb38813](https://github.com/cogpy/c9o-mach/commit/fb388135e33dfe6b3a9114b9d2c8bb2c4a0a5bd9))
+* **ci,mig:** match migcom TARGET_CC to kernel arch, not user arch ([a0f9b89](https://github.com/cogpy/c9o-mach/commit/a0f9b8980f3533a619e6863ab473c19d61e58cb7))
+* **ci:** run extended test loop from build-${matrix.arch} directory ([7c40264](https://github.com/cogpy/c9o-mach/commit/7c402646b3ab0347e2241d0795d2c3d7af14118d))
+* **ci:** run extended test loop from build-${matrix.arch}; unblock MIG, tests, and latent build bugs ([15c09b3](https://github.com/cogpy/c9o-mach/commit/15c09b3c462410f78aa6145646c3baf021e6646a))
+* **kern,linux:** resolve latent build/link errors unmasked by MIG fix ([4637006](https://github.com/cogpy/c9o-mach/commit/46370066d96b4035d89e206acc1a3c7dc75d5059))
+* **linux/pci:** guard pci_find_capability against malformed cap chains ([84ac195](https://github.com/cogpy/c9o-mach/commit/84ac19548b5d38d7a3dfd4c45775705d74d06230))
+* **linux:** restore pci_find_capability in pci.c; add &lt;linux/types.h&gt; ([d8f7f58](https://github.com/cogpy/c9o-mach/commit/d8f7f5883292a080c33dbb4db5b8efd24b0e8934))
+* **tests,kern:** wire USER_MIG + dedupe testlib enum + drop kern include ([c62ddb3](https://github.com/cogpy/c9o-mach/commit/c62ddb36b7797f977759bb0b3e0ce9e4cfbbb610))
+* **tests:** add -I$(srcdir) to TESTCFLAGS so kern/* internal headers resolve ([0444c78](https://github.com/cogpy/c9o-mach/commit/0444c783b609de6f2f40b11052a3b529f4c12d58))
+* **tests:** drop -ftrivial-auto-var-init=pattern (GCC 12+ only) ([eee10c4](https://github.com/cogpy/c9o-mach/commit/eee10c4ad0861f841c298d70be2f8384b70ed21b))
+* **tests:** extend TESTCFLAGS include path for kernel-internal headers ([63ee978](https://github.com/cogpy/c9o-mach/commit/63ee978e9860e5f195a53999498950f7d7e20bc9))
+* **tests:** include i386 headers in TESTCFLAGS for x86_64 builds ([2d4dd30](https://github.com/cogpy/c9o-mach/commit/2d4dd300fc3dd39b1d7c7e6c80641a82ec276a73))
+
 ## 1.0.0 (2026-04-23)
 
 
