@@ -135,7 +135,7 @@ type vm_address_t = rpc_vm_size_t
     intran: vm_address_t convert_vm_from_user(rpc_vm_address_t)
     outtran: rpc_vm_address_t convert_vm_to_user(vm_address_t)
 #elif defined(KERNEL_USER)
-#ifdef _ILP32
+#if defined(_ILP32) || defined(USER32)
     ctype: uint32_t
 #else
     ctype: uint64_t
@@ -147,7 +147,7 @@ type vm_offset_t = rpc_vm_offset_t
     intran: vm_offset_t convert_vm_from_user(rpc_vm_offset_t)
     outtran: rpc_vm_offset_t convert_vm_to_user(vm_offset_t)
 #elif defined(KERNEL_USER)
-#ifdef _ILP32
+#if defined(_ILP32) || defined(USER32)
     ctype: uint32_t
 #else
     ctype: uint64_t
@@ -159,7 +159,7 @@ type vm_size_t = rpc_vm_size_t
     intran: vm_size_t convert_vm_from_user(rpc_vm_size_t)
     outtran: rpc_vm_size_t convert_vm_to_user(vm_size_t)
 #elif defined(KERNEL_USER)
-#ifdef _ILP32
+#if defined(_ILP32) || defined(USER32)
     ctype: uint32_t
 #else
     ctype: uint64_t

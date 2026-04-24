@@ -147,16 +147,34 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y valgrind qemu-system-x86 build-essential \
           gcc-multilib autoconf automake libtool libtool-bin pkg-config \
-          gawk bison flex
+          gawk bison flex xorriso grub-pc-bin mtools nasm texinfo
+
+    - name: Build and install MIG (32-bit user ABI)
+      run: |
+        set -euo pipefail
+        sudo mkdir -p /usr/include/mach
+        sudo cp -r include/mach/* /usr/include/mach/
+        sudo ln -sfn "$PWD/i386/include/mach/i386" /usr/include/mach/machine
+        pushd mig
+        autoreconf --install
+        ./configure CPPFLAGS="-I/usr/include"
+        make -j"$(nproc)" TARGET_CC='gcc -m32' TARGET_CFLAGS='-m32'
+        sudo make install
+        popd
+        command -v mig
 
     - name: Build test binaries
       run: |
-        autoreconf --install || true
-        ./configure --host=i686-gnu --enable-debug CC='gcc -m32 -g -O0' || true
-        make -j$(nproc) || true
+        autoreconf --install
+        ./configure --host=i686-gnu --enable-debug CC='gcc -m32 -g -O0' MIG='mig'
+        make -j"$(nproc)"
 
     - name: Run Valgrind on test suite
       run: |
+        if [ ! -f gnumach ]; then
+          echo "::warning::gnumach binary not produced; skipping Valgrind run"
+          exit 0
+        fi
         if [ -x scripts/run-valgrind-tests.sh ]; then
           bash scripts/run-valgrind-tests.sh
         else
