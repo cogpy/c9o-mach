@@ -166,7 +166,7 @@ jobs:
     - name: Build test binaries
       run: |
         autoreconf --install
-        ./configure --host=i686-gnu --enable-debug CC='gcc -m32 -g -O0' MIG='mig'
+        ./configure --host=i686-gnu --enable-debug CC='gcc -m32 -g -O0' LD='ld -melf_i386' MIG='mig'
         make -j"$(nproc)"
 
     - name: Run Valgrind on test suite

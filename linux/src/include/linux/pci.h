@@ -1255,5 +1255,48 @@ extern void pci_setup_device_resources(struct pci_dev *dev);
 extern int pci_read_config_dword_ext(struct pci_dev *dev, int pos, u32 *val);
 extern int pci_write_config_dword_ext(struct pci_dev *dev, int pos, u32 val);
 
+/*
+ * Helpers to extract bus/devfn from the encoded pci_dev pointer used in this
+ * Mach Linux compatibility layer (struct pci_dev is not a real pointer here).
+ * Guard with #ifndef so kern_compat.h / pcmcia_glue.h can override freely.
+ */
+#ifndef bus_number
+#define bus_number(pci_dev)	((((int)(pci_dev)) >> 8) & 0xff)
+#endif
+#ifndef devfn_number
+#define devfn_number(pci_dev)	(((int)(pci_dev)) & 0xff)
+#endif
+
+/*
+ * Standard pci_read/write_config_* wrappers that translate the new-style
+ * struct pci_dev* API down to the pcibios_* functions used by this port.
+ * Guarded so that kern_compat.h and pcmcia_glue.h, which define their own
+ * equivalent macros, do not trigger redefinition warnings.
+ */
+#ifndef pci_read_config_byte
+#define pci_read_config_byte(pdev, where, valp) \
+	pcibios_read_config_byte(bus_number(pdev), devfn_number(pdev), where, valp)
+#endif
+#ifndef pci_read_config_word
+#define pci_read_config_word(pdev, where, valp) \
+	pcibios_read_config_word(bus_number(pdev), devfn_number(pdev), where, valp)
+#endif
+#ifndef pci_read_config_dword
+#define pci_read_config_dword(pdev, where, valp) \
+	pcibios_read_config_dword(bus_number(pdev), devfn_number(pdev), where, valp)
+#endif
+#ifndef pci_write_config_byte
+#define pci_write_config_byte(pdev, where, val) \
+	pcibios_write_config_byte(bus_number(pdev), devfn_number(pdev), where, val)
+#endif
+#ifndef pci_write_config_word
+#define pci_write_config_word(pdev, where, val) \
+	pcibios_write_config_word(bus_number(pdev), devfn_number(pdev), where, val)
+#endif
+#ifndef pci_write_config_dword
+#define pci_write_config_dword(pdev, where, val) \
+	pcibios_write_config_dword(bus_number(pdev), devfn_number(pdev), where, val)
+#endif
+
 #endif /* __KERNEL__ */
 #endif /* LINUX_PCI_H */
