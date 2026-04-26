@@ -5,6 +5,14 @@ All notable changes to the c9o-mach project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2](https://github.com/cogpy/c9o-mach/compare/v1.0.1...v1.0.2) (2026-04-26)
+
+
+### Bug Fixes
+
+* **ci:** fix 5 CI build bugs (pci macros, lock.h macros.h, elf32 linker, user-qemu.mk, format strings) ([23635ac](https://github.com/cogpy/c9o-mach/commit/23635ac05e6ead2c77da0128eb9afd2bc97972ec))
+* **ci:** resolve 5 CI build failures (pci config macros, lock.h self-containment, elf32 linker, USER_TESTS list, format specifiers) ([08d91e7](https://github.com/cogpy/c9o-mach/commit/08d91e7b08d80e2a29dee0b4cee39f1e1be2f9cc))
+
 ## [1.0.1](https://github.com/cogpy/c9o-mach/compare/v1.0.0...v1.0.1) (2026-04-24)
 
 
