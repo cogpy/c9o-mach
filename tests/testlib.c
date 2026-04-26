@@ -325,9 +325,9 @@ void benchmark_report(const benchmark_t *bench, const char *units)
                             duration / bench->iterations : duration;
     
     printf("BENCHMARK RESULT: %s\n", bench->test_name);
-    printf("  Total time: %llu microseconds\n", duration);
-    printf("  Iterations: %llu\n", bench->iterations);
-    printf("  Per operation: %llu microseconds\n", per_operation);
+    printf("  Total time: %llu microseconds\n", (unsigned long long)duration);
+    printf("  Iterations: %llu\n", (unsigned long long)bench->iterations);
+    printf("  Per operation: %llu microseconds\n", (unsigned long long)per_operation);
     if (units) {
         printf("  Units: %s\n", units);
     }

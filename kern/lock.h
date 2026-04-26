@@ -34,6 +34,7 @@
 #ifndef	_KERN_LOCK_H_
 #define	_KERN_LOCK_H_
 
+#include <kern/macros.h>
 #include <mach/boolean.h>
 #include <mach/machine/vm_types.h>
 #include <machine/spl.h>
