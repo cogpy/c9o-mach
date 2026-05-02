@@ -5,6 +5,14 @@ All notable changes to the c9o-mach project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3](https://github.com/cogpy/c9o-mach/compare/v1.0.2...v1.0.3) (2026-05-02)
+
+
+### Bug Fixes
+
+* run-valgrind-tests.sh exits 1 on passing tests due to bash arithmetic false return ([54ae017](https://github.com/cogpy/c9o-mach/commit/54ae017fd70ba762922dfd302ad1de1bfa222888))
+* use pre-increment in run-valgrind-tests.sh to avoid set -e false exit ([3fae0b4](https://github.com/cogpy/c9o-mach/commit/3fae0b4194b6a004fc1fa41b378a7044fe8cd917))
+
 ## [1.0.2](https://github.com/cogpy/c9o-mach/compare/v1.0.1...v1.0.2) (2026-04-26)
 
 
