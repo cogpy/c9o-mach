@@ -203,6 +203,12 @@ jobs:
         if ! timeout 300 make run-hello; then
           echo "❌ CRITICAL ERROR: Basic hello test failed"
           echo "🛠️  Actionable fix: Kernel may have runtime issues, check QEMU logs"
+          # The run script filters console output from the test start marker
+          # onward; when the marker never appears the entire boot log is
+          # swallowed. Dump the raw QEMU console log so failures are
+          # diagnosable directly from the job log.
+          echo "── Raw QEMU console output (test-*.raw) ──"
+          find . -name 'test-*.raw' -exec sh -c 'echo "=== $1 ==="; tail -200 "$1"' _ {} \; || true
           exit 1
         fi
         echo "✅ Basic functionality test passed"

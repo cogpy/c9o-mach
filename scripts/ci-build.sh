@@ -104,12 +104,22 @@ check_dependencies() {
 }
 
 setup_mig() {
-    log "Setting up MIG (Mach Interface Generator)..."
-    
+    local arch="${1:-x86_64}"
+    log "Setting up MIG (Mach Interface Generator) for $arch..."
+
     # Cognitive Flow: [check_existing] → [build_from_source] → [validate_installation]
     # Tensor Dimension: [mig_setup_matrix[headers, build, install, validate]]
-    
-    if command -v mig &> /dev/null; then
+
+    # migcom bakes target type sizes into itself at build time (cpu.sym is
+    # compiled with TARGET_CC/TARGET_CFLAGS to produce cpu.h).  A mig built
+    # with default flags on an x86_64 runner generates 64-bit-typed stubs,
+    # which fail every _Static_assert when compiled with -m32.  For i686 we
+    # must therefore always build mig ourselves with TARGET_CFLAGS=-m32; a
+    # preexisting host mig can only be trusted for x86_64.
+    local mig_target_cflags=""
+    if [[ "$arch" == "i686" ]]; then
+        mig_target_cflags="-m32"
+    elif command -v mig &> /dev/null; then
         log "MIG already available: $(which mig)"
         # Validate existing MIG functionality (tensor: [existing_mig, validation])
         if mig -version &> /dev/null || mig --help &> /dev/null; then
@@ -145,7 +155,7 @@ setup_mig() {
         exit 1
     fi
     
-    if ! ./configure CPPFLAGS="-I/usr/include"; then
+    if ! ./configure CPPFLAGS="-I/usr/include" TARGET_CFLAGS="$mig_target_cflags"; then
         error "❌ MIG configure failed"
         exit 1
     fi
@@ -333,7 +343,7 @@ main() {
     cd "$PROJECT_ROOT"
     
     check_dependencies
-    setup_mig
+    setup_mig "$arch"
     configure_build "$arch" "$clean" "$debug"
     build_kernel "$arch" "$force_build"
     
