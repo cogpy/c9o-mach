@@ -261,7 +261,7 @@ configure_build() {
             # MIG .defs with USER_CPP, and without -m32 the preprocessor
             # selects 64-bit types while the stubs compile 32-bit, tripping
             # every _Static_assert in the generated code.
-            configure_flags="--host=i686-gnu CC='gcc -m32' LD='ld -melf_i386' USER_CPPFLAGS='-m32' USER_CFLAGS='-m32'"
+            configure_flags="--host=i686-gnu CC='gcc -m32' LD='ld -melf_i386' USER_MIG='mig' USER_CPPFLAGS='-m32' USER_CFLAGS='-m32'"
             if [[ "$debug" == "true" ]]; then
                 cflags="$cflags -DDEBUG -DMACH_KDB"
             fi
@@ -284,9 +284,12 @@ configure_build() {
     esac
     
     log "Running configure with flags: $configure_flags"
-    # USER_MIG must be set explicitly because configure's AC_CHECK_PROG only
-    # falls back to `mig` when host == build; we always pass --host=…-gnu.
-    eval "../configure $configure_flags MIG='mig' USER_MIG='mig' CFLAGS='$cflags'"
+    # USER_MIG is set per-arch in configure_flags: configure's AC_CHECK_PROG
+    # only falls back to `mig` when host == build, and we always pass
+    # --host=…-gnu.  i686 uses the installed 32-bit `mig`; x86_64 (user32)
+    # needs the user-ABI `i686-gnu-mig`.  Do not append another USER_MIG
+    # here: with duplicate VAR= configure arguments the last one wins.
+    eval "../configure $configure_flags MIG='mig' CFLAGS='$cflags'"
     
     cd ..
 }
