@@ -16,6 +16,7 @@ This documentation set synthesizes the official GNU Mach manual into a practical
 - Boot and Kernel Modules: `boot-and-modules.md`
 - Kernel Debugger and Profiling: `debugger-and-profiling.md`
 - Host Interface: `host-interface.md`
+- CoGWXP-OS9 Integration: `cogwxp-integration.md`
 
 ## Diagram Conventions
 - Mermaid blocks are fenced as:
