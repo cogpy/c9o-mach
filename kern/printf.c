@@ -122,14 +122,26 @@
 #include <kern/printf.h>
 #include <mach/boolean.h>
 #include <mach/time_value.h>
-/*
- * Forward-declare `uptime` (defined in kern/mach_clock.c) rather than pulling
- * in <kern/mach_clock.h>, which is not exported to the user-space test build.
- */
-extern time_value64_t uptime;
+#include <kern/assert.h>
 #include <kern/host.h>
 #include <kern/constants.h>
 #include <kern/lock.h>
+
+/*
+ * Weak fallback for Assert() used in user-space test builds.
+ * In the kernel proper, the strong definition in kern/debug.c overrides this.
+ * In test builds this is never actually reached because
+ * console_timestamp_initialized remains FALSE so console_print_timestamp()
+ * returns before calling time_value64_sub().
+ */
+__attribute__((weak, noreturn)) void
+Assert(const char *exp __attribute__((unused)),
+       const char *filename __attribute__((unused)),
+       int line __attribute__((unused)),
+       const char *fun __attribute__((unused)))
+{
+	__builtin_trap();
+}
 
 /* Console timestamp support */
 boolean_t console_timestamps_enabled = TRUE;
@@ -142,8 +154,15 @@ static simple_lock_data_t console_timestamp_lock;
 static simple_lock_data_t printf_line_tracking_lock;
 static boolean_t at_line_start = TRUE;
 
-/* External kernel command line */
-extern char *kernel_cmdline;
+/*
+ * Weak fallback definitions for kernel globals used in timestamp code.
+ * In the kernel proper, the strong definitions in i386/i386at/model_dep.c
+ * (kernel_cmdline) and kern/mach_clock.c (uptime) override these.
+ * The weak defaults allow kern/printf.c to compile and link in the
+ * user-space test build where those files are not included.
+ */
+__attribute__((weak)) char *kernel_cmdline = NULL;
+__attribute__((weak)) time_value64_t uptime = {0, 0};
 
 /*
  * Parse kernel command line for console timestamp parameters
