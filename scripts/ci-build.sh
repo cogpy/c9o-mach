@@ -200,7 +200,11 @@ configure_build() {
     
     case "$arch" in
         i686)
-            configure_flags="--host=i686-gnu CC='gcc -m32' LD='ld -melf_i386'"
+            # USER_CPPFLAGS must carry -m32: the test harness preprocesses
+            # MIG .defs with USER_CPP, and without -m32 the preprocessor
+            # selects 64-bit types while the stubs compile 32-bit, tripping
+            # every _Static_assert in the generated code.
+            configure_flags="--host=i686-gnu CC='gcc -m32' LD='ld -melf_i386' USER_CPPFLAGS='-m32' USER_CFLAGS='-m32'"
             if [[ "$debug" == "true" ]]; then
                 cflags="$cflags -DDEBUG -DMACH_KDB"
             fi
