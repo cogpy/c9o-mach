@@ -433,6 +433,8 @@ jobs:
           "make run-mach_port:IPC functionality test"
           "make run-console-timestamps:Console timestamp test"
           "make run-cognitive:Cognitive primitives test"
+          "make run-ninep:9P2000 codec test"
+          "make run-plan9util:Plan 9 utilities test"
         )
         
         cd build-${{ matrix.arch }}
