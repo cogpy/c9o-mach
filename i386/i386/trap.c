@@ -303,7 +303,7 @@ dump_ss(regs);
 		 * Enhanced general protection trap handling
 		 * Add bounds checking to prevent invalid access
 		 */
-		if (!MACH_VALIDATE_PTR(regs, 0x1000, 0xFFFFFFFF)) {
+		if (!MACH_VALIDATE_PTR(regs, 0x1000, MACH_PTR_MAX_ADDR)) {
 		    printf("Invalid register state pointer in GPF handler\n");
 		    goto badtrap;
 		}
@@ -324,8 +324,8 @@ dump_ss(regs);
 			     rp++) {
 			    if (regs->eip == rp->fault_addr) {
 				/* Validate recovery address before jumping */
-				if (MACH_VALIDATE_PTR((void *)rp->recover_addr, 
-						       0x1000, 0xFFFFFFFF)) {
+				if (MACH_VALIDATE_PTR((void *)rp->recover_addr,
+						       0x1000, MACH_PTR_MAX_ADDR)) {
 				    regs->eip = rp->recover_addr;
 				    return;
 				} else {
@@ -345,7 +345,7 @@ dump_ss(regs);
 		 */
 		if (thread && thread->recover) {
 		    /* Validate thread recovery address before using it */
-		    if (MACH_VALIDATE_PTR((void *)thread->recover, 0x1000, 0xFFFFFFFF)) {
+		    if (MACH_VALIDATE_PTR((void *)thread->recover, 0x1000, MACH_PTR_MAX_ADDR)) {
 			regs->eip = thread->recover;
 			thread->recover = 0;
 			return;

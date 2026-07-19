@@ -423,7 +423,7 @@ kern_return_t thread_create(
 		return KERN_INVALID_ARGUMENT;
 
 	/* Validate parent task pointer */
-	if (!MACH_VALIDATE_PTR(parent_task, 0x1000, 0xFFFFFFFF)) {
+	if (!MACH_VALIDATE_PTR(parent_task, 0x1000, MACH_PTR_MAX_ADDR)) {
 		printf("thread_create: invalid parent_task pointer\n");
 		return KERN_INVALID_ARGUMENT;
 	}
@@ -444,7 +444,7 @@ kern_return_t thread_create(
 		return KERN_RESOURCE_SHORTAGE;
 
 	/* Validate allocated thread pointer */
-	if (!MACH_VALIDATE_PTR(new_thread, 0x1000, 0xFFFFFFFF)) {
+	if (!MACH_VALIDATE_PTR(new_thread, 0x1000, MACH_PTR_MAX_ADDR)) {
 		printf("thread_create: invalid allocated thread pointer\n");
 		kmem_cache_free(&thread_cache, (vm_offset_t) new_thread);
 		return KERN_RESOURCE_SHORTAGE;
