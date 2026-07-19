@@ -418,7 +418,6 @@ kern_return_t thread_create(
 	thread_t	new_thread;
 	processor_set_t	pset;
 
-	/* Enhanced thread creation validation */
 	if (parent_task == TASK_NULL || child_thread == NULL)
 		return KERN_INVALID_ARGUMENT;
 
