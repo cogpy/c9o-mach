@@ -63,8 +63,12 @@ static char *p9_cleanname(char *name)
 		d0 += 1 + p9_chartorune(&r, d0 + 1);	/* ignore slash: #/ */
 		while (!P9_SEP(*d0))
 			d0 += p9_chartorune(&r, d0);
-		if (d0 == 0)
-			return name;
+		/*
+		 * Upstream cleanname.c has a `if (d0 == 0) return name;`
+		 * here; it is dead code (d0 starts at name and only
+		 * advances) and is dropped so it is not read as a real
+		 * null guard.
+		 */
 		d0++;		/* keep / after #<name> */
 		rooted = 1;
 	} else if (d0[0] == '/') {
