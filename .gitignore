@@ -55,6 +55,22 @@ build-aux/
 analysis-reports/
 build-*-test/
 
+# Out-of-tree build directories (never commit configured/built trees)
+build-*/
+
+# Build and analysis logs
+/*.log
+/build_result.txt
+/compiler-warnings.txt
+test-results/
+
+# Patch application debris
+*.orig
+*.rej
+
+# Compiled MIG binary
+mig/migcom
+
 # Test artifacts
 test_vm_map_optimization
 vm_map_optimization_test
@@ -89,3 +105,12 @@ test_*.c
 final_test
 
 *.o
+mig/cpu.h
+mig/cpu.symc
+
+# Archived build artifacts (see archived/MANIFEST.md).
+# The bulky restored contents are ignored so clone size stays optimized;
+# only the manifest is tracked, and every file remains recoverable from
+# git history (commit 6e5fb19^).
+/archived/*
+!/archived/MANIFEST.md

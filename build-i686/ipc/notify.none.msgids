@@ -1,6 +1,0 @@
-notify 64 mach_notify_port_deleted 1 65 0
-notify 64 mach_notify_msg_accepted 2 66 0
-notify 64 mach_notify_port_destroyed 5 69 0
-notify 64 mach_notify_no_senders 6 70 0
-notify 64 mach_notify_send_once 7 71 0
-notify 64 mach_notify_dead_name 8 72 0

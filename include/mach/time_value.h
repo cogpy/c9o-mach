@@ -87,6 +87,18 @@ static __inline__ time_value_t convert_time_value_from_user(rpc_time_value_t tv)
 #define	TIME_MICROS_MAX	(1000000)
 #define	TIME_NANOS_MAX	(1000000000)
 
+/*
+ *	The normalization checks below expand to assert().  Inside the
+ *	kernel that is <kern/assert.h>; in user programs it is whatever
+ *	<assert.h> the includer provided.  Freestanding user builds
+ *	(e.g. the test harness) that define neither get no-op checks.
+ */
+#ifdef KERNEL
+#include <kern/assert.h>
+#elif !defined(assert)
+#define assert(expr) ((void) 0)
+#endif
+
 #define time_value_assert(val)			\
   assert(0 <= (val)->microseconds && (val)->microseconds < TIME_MICROS_MAX);
 

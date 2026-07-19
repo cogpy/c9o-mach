@@ -120,13 +120,22 @@ type ipc_space_t = mach_port_t
 #endif	/* KERNEL_SERVER */
 		;
 
-#if (defined(KERNEL) && defined(USER32)) || (defined(KERNEL) && defined(_ILP32))
+/*
+ * rpc types are 32-bit whenever the side these stubs are generated for
+ * has a 32-bit ABI: a 64-bit kernel serving 32-bit userland (USER32),
+ * or any 32-bit compilation environment (_ILP32 is predefined by the
+ * compiler for -m32, kernel and user alike).  The previous condition
+ * required KERNEL for the _ILP32 case, which made 32-bit *user*
+ * programs pick 64-bit rpc types and fail every generated
+ * _Static_assert.
+ */
+#if (defined(KERNEL) && defined(USER32)) || defined(_ILP32)
 type rpc_uintptr_t = uint32_t;
 type rpc_vm_size_t = uint32_t;
-#else /* KERNEL and USER32 or KERNEL and _ILP32 */
+#else /* (KERNEL and USER32) or _ILP32 */
 type rpc_uintptr_t = uint64_t;
 type rpc_vm_size_t = uint64_t;
-#endif /* KERNEL and USER32 or KERNEL and _ILP32 */
+#endif /* (KERNEL and USER32) or _ILP32 */
 
  type rpc_vm_offset_t = rpc_vm_size_t;
 
