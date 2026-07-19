@@ -278,7 +278,8 @@ USER_TESTS := \
 	tests/test-mach5-research \
 	tests/test-virtio \
 	tests/test-kernel-feature \
-	tests/test-cognitive
+	tests/test-cognitive \
+	tests/test-ninep
 
 USER_TESTS_CLEAN = $(subst tests/,clean-,$(USER_TESTS))
 
