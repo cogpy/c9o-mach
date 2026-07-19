@@ -6,9 +6,25 @@ name: Enhanced CI Pipeline
 on:
   push:
     branches: [ master, develop ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'doc/**'
+      - 'examples/**'
+      - '.github/ISSUE_TEMPLATE/**'
   pull_request:
     branches: [ master, develop ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'doc/**'
+      - 'examples/**'
+      - '.github/ISSUE_TEMPLATE/**'
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 jobs:
   # ── Job 1: Multi-compiler Build Matrix (from diod) ──
@@ -48,7 +64,21 @@ jobs:
           build-essential gcc-multilib binutils autoconf automake \
           libtool libtool-bin pkg-config gawk bison flex nasm \
           xorriso grub-pc-bin mtools qemu-system-x86 git python3 \
-          cppcheck clang clang-tools texinfo valgrind
+          cppcheck clang clang-tools texinfo valgrind ccache
+
+    - name: Set up ccache
+      uses: actions/cache@v4
+      with:
+        path: ~/.ccache
+        key: ccache-${{ matrix.arch }}-${{ matrix.compiler }}-${{ github.sha }}
+        restore-keys: |
+          ccache-${{ matrix.arch }}-${{ matrix.compiler }}-
+
+    - name: Enable ccache
+      run: |
+        ccache --set-config=max_size=500M
+        ccache --set-config=cache_dir="$HOME/.ccache"
+        echo "/usr/lib/ccache" >> "$GITHUB_PATH"
 
     - name: Configure
       run: |

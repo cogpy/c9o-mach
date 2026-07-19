@@ -55,6 +55,22 @@ build-aux/
 analysis-reports/
 build-*-test/
 
+# Out-of-tree build directories (never commit configured/built trees)
+build-*/
+
+# Build and analysis logs
+/*.log
+/build_result.txt
+/compiler-warnings.txt
+test-results/
+
+# Patch application debris
+*.orig
+*.rej
+
+# Compiled MIG binary
+mig/migcom
+
 # Test artifacts
 test_vm_map_optimization
 vm_map_optimization_test
