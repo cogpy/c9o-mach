@@ -421,6 +421,18 @@ kern_return_t thread_create(
 	if (parent_task == TASK_NULL || child_thread == NULL)
 		return KERN_INVALID_ARGUMENT;
 
+	/* Validate parent task pointer */
+	if (!MACH_VALIDATE_PTR(parent_task, 0x1000, MACH_PTR_MAX_ADDR)) {
+		printf("thread_create: invalid parent_task pointer\n");
+		return KERN_INVALID_ARGUMENT;
+	}
+
+	/* Check for potential resource exhaustion before allocation */
+	if (parent_task->thread_count >= 1000) { /* Reasonable upper limit */
+		printf("thread_create: task thread count limit exceeded\n");
+		return KERN_RESOURCE_SHORTAGE;
+	}
+
 	/*
 	 *	Allocate a thread and initialize static fields
 	 */
@@ -429,6 +441,13 @@ kern_return_t thread_create(
 
 	if (new_thread == THREAD_NULL)
 		return KERN_RESOURCE_SHORTAGE;
+
+	/* Validate allocated thread pointer */
+	if (!MACH_VALIDATE_PTR(new_thread, 0x1000, MACH_PTR_MAX_ADDR)) {
+		printf("thread_create: invalid allocated thread pointer\n");
+		kmem_cache_free(&thread_cache, (vm_offset_t) new_thread);
+		return KERN_RESOURCE_SHORTAGE;
+	}
 
 	*new_thread = thread_template;
 

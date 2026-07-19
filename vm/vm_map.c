@@ -1688,7 +1688,12 @@ static void vm_map_pageable_scan(
 
 	/*
 	 * Pass 1. Update counters and prepare wiring faults.
-	 * Use red-black tree traversal for O(log n + k) performance.
+	 *
+	 * Entries are chained in an address-ordered list, so advancing
+	 * via vme_next in the loop header is O(1) per step and keeps the
+	 * continue statements below safe.  (A previous rewrite advanced
+	 * via rbtree_next at the bottom of the body, which every continue
+	 * bypassed, spinning forever on the first never-wired entry.)
 	 */
 
 	do_wire_faults = FALSE;
@@ -1696,9 +1701,7 @@ static void vm_map_pageable_scan(
 	for (entry = start_entry;
 	     (entry != vm_map_to_entry(map)) &&
 	     (entry->vme_start < end);
-	     ) {
-		struct rbtree_node *next_node;
-
+	     entry = entry->vme_next) {
 		/*
 		 * Unwiring.
 		 *
@@ -1793,14 +1796,6 @@ static void vm_map_pageable_scan(
 		if (entry->wired_count == 1) {
 			do_wire_faults = TRUE;
 		}
-		
-		/* Use red-black tree traversal for next entry */
-		next_node = rbtree_next(&entry->tree_node);
-		if (next_node != NULL) {
-			entry = rbtree_entry(next_node, struct vm_map_entry, tree_node);
-		} else {
-			entry = vm_map_to_entry(map);
-		}
 	}
 
 	/*
@@ -1831,20 +1826,10 @@ static void vm_map_pageable_scan(
 		for (entry = start_entry;
 		     (entry != vm_map_to_entry(map)) &&
 		     (entry->vme_end <= end);
-		     ) {
-			struct rbtree_node *next_node;
-			
+		     entry = entry->vme_next) {
 			assert(!entry->in_transition);
 			entry->in_transition = TRUE;
 			entry->needs_wakeup = FALSE;
-			
-			/* Use red-black tree traversal for next entry */
-			next_node = rbtree_next(&entry->tree_node);
-			if (next_node != NULL) {
-				entry = rbtree_entry(next_node, struct vm_map_entry, tree_node);
-			} else {
-				entry = vm_map_to_entry(map);
-			}
 		}
 		vm_map_unlock(map); /* trust me ... */
 	} else {
@@ -1855,9 +1840,7 @@ static void vm_map_pageable_scan(
 	for (entry = start_entry;
 	     (entry != vm_map_to_entry(map)) &&
 	     (entry->vme_end <= end);
-	     ) {
-		struct rbtree_node *next_node;
-		
+	     entry = entry->vme_next) {
 		/*
 		 * The wiring count can only be 1 if it was
 		 * incremented by this function right before
@@ -1869,14 +1852,6 @@ static void vm_map_pageable_scan(
 			 */
 			vm_fault_wire(map, entry);
 		}
-		
-		/* Use red-black tree traversal for next entry */
-		next_node = rbtree_next(&entry->tree_node);
-		if (next_node != NULL) {
-			entry = rbtree_entry(next_node, struct vm_map_entry, tree_node);
-		} else {
-			entry = vm_map_to_entry(map);
-		}
 	}
 
 	if (vm_map_pmap(map) == kernel_pmap) {
@@ -1884,9 +1859,7 @@ static void vm_map_pageable_scan(
 		for (entry = start_entry;
 		     (entry != vm_map_to_entry(map)) &&
 		     (entry->vme_end <= end);
-		     ) {
-			struct rbtree_node *next_node;
-			
+		     entry = entry->vme_next) {
 			assert(entry->in_transition);
 			entry->in_transition = FALSE;
 			/*
@@ -1895,14 +1868,6 @@ static void vm_map_pageable_scan(
 			 *	unlocked.
 			 */
 			assert(!entry->needs_wakeup);
-			
-			/* Use red-black tree traversal for next entry */
-			next_node = rbtree_next(&entry->tree_node);
-			if (next_node != NULL) {
-				entry = rbtree_entry(next_node, struct vm_map_entry, tree_node);
-			} else {
-				entry = vm_map_to_entry(map);
-			}
 		}
 	} else {
 		vm_map_lock_clear_recursive(map);

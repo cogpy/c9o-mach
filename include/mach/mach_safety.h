@@ -84,6 +84,15 @@
     ((ptr) != NULL && (uintptr_t)(ptr) >= (uintptr_t)(min_addr) && \
      (uintptr_t)(ptr) < (uintptr_t)(max_addr))
 
+/*
+ * Word-size-aware upper bound for MACH_VALIDATE_PTR.  A literal
+ * 0xFFFFFFFF rejects every valid kernel pointer on 64-bit targets
+ * (kernel addresses are 0xffffffff8xxxxxxx and above), so callers
+ * validating "any plausible kernel pointer" must use this instead.
+ * On 32-bit targets it is identical to 0xFFFFFFFF.
+ */
+#define MACH_PTR_MAX_ADDR ((uintptr_t) -1)
+
 /* Validate memory region doesn't wrap around */
 #define MACH_VALIDATE_REGION(addr, size) \
     ((size) > 0 && (uintptr_t)(addr) + (size) > (uintptr_t)(addr))

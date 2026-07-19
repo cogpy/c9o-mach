@@ -29,11 +29,19 @@
 #include <mach_port.user.h>
 #include <mach_host.user.h>
 
+#include <mach/time_value.h>
+
 #ifdef PAGE_SIZE
 vm_size_t vm_page_size = PAGE_SIZE;
 #else
 vm_size_t vm_page_size;
 #endif
+
+/* Kernel symbols referenced by kern/printf.c's console timestamp
+   support.  The test harness has no boot command line or clock tick
+   source, so timestamps stay at their initial values. */
+char *kernel_cmdline = "";
+time_value64_t uptime = { 0, 0 };
 
 static int argc = 0;
 static char *argv_unknown[] = {"unknown", "m1", "123", "456"};
