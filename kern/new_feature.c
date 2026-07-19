@@ -18,6 +18,9 @@
 #include <kern/mach_clock.h>
 #include <string.h>
 
+/* Monotonic uptime helper defined in kern/mach_clock.c. */
+extern void clock_get_uptime(time_value_t *);
+
 /* Global feature instances */
 struct kernel_feature global_kernel_feature;
 struct feature_stats global_feature_stats;
@@ -32,9 +35,9 @@ struct feature_stats global_feature_stats;
 static uint64_t
 feature_get_timestamp_us(void)
 {
-    struct time_value tv;
-    clock_get_system_microtime(&tv.seconds, &tv.microseconds);
-    return (uint64_t)tv.seconds * 1000000ULL + tv.microseconds;
+    time_value_t tv;
+    clock_get_uptime(&tv);
+    return (uint64_t)tv.seconds * 1000000ULL + (uint64_t)tv.microseconds;
 }
 
 /*

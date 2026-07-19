@@ -109,7 +109,7 @@ void mach_trace_event(mach_trace_category_t category,
 	extern void __mach_trace_##category##_##name(void)
 
 #define MACH_TRACEPOINT_DEFINE(category, name, level, id, fmt, ...) \
-	static void __attribute__((unused)) __mach_trace_##category##_##name(void) { \
+	void __mach_trace_##category##_##name(void) { \
 		if (mach_tracing_enabled) \
 			mach_trace_event(MACH_TRACE_##category, level, id, fmt, ##__VA_ARGS__); \
 	}

@@ -814,9 +814,9 @@ static int ahci_identify(const volatile struct ahci_host *ahci_host, const volat
 			printk("sd%u: %s, %uMB w/%dkB Cache\n", (unsigned) (port - ports), id.model, (unsigned) (port->capacity/2048), id.buf_size/2);
 			
 		/* Detect NCQ support */
-		if ((readl(&ahci_host->cap) & HOST_CAP_NCQ) && (id.sata_capability & 0x0100)) {
-			/* Both controller and device support NCQ */
-			port->ncq_depth = (id.queue_depth & 0x1f) + 1;
+		if ((readl(&ahci_host->cap) & HOST_CAP_NCQ) && (id.word76 & 0x0100)) {
+			/* Both controller and device support NCQ (word76 = SATA capabilities) */
+			port->ncq_depth = (id.word75 & 0x1f) + 1;
 			if (port->ncq_depth > AHCI_MAX_CMDS)
 				port->ncq_depth = AHCI_MAX_CMDS;
 			printk("sd%u: NCQ enabled, queue depth %u\n", (unsigned) (port - ports), port->ncq_depth);
@@ -998,7 +998,7 @@ static void ahci_probe_dev(unsigned char bus, unsigned char device)
 	/* Report controller capabilities */
 	u32 cap = readl(&ahci_host->cap);
 	u32 cap2 = readl(&ahci_host->cap2);
-	u32 version = readl(&ahci_host->vs);
+	u32 version = readl(&ahci_host->v);
 	
 	printk("ahci: %02x:%02x.%x: AHCI %u.%u controller\n", bus, dev, fun, 
 		   version >> 16, (version >> 8) & 0xff);

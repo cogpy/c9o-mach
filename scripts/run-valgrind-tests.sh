@@ -40,18 +40,18 @@ run_valgrind() {
 
     if [ ! -x "$binary" ]; then
         echo "  SKIP (not executable)"
-        ((SKIP++))
+        (( ++SKIP ))
         return 0
     fi
 
-    VALGRIND_OPTS+=("--xml-file=$xml_file")
+    local -a opts=("${VALGRIND_OPTS[@]}" "--xml-file=$xml_file")
 
-    if valgrind "${VALGRIND_OPTS[@]}" "$binary" 2>&1; then
+    if valgrind "${opts[@]}" "$binary" 2>&1; then
         echo "  PASS (no memory errors)"
-        ((PASS++))
+        (( ++PASS ))
     else
         echo "  FAIL (memory errors detected)"
-        ((FAIL++))
+        (( ++FAIL ))
     fi
 }
 

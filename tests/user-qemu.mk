@@ -112,8 +112,13 @@ TEST_FAILURE_MARKER = gnumach-test-failure
 
 TESTCFLAGS = -static -nostartfiles -nolibc \
 	-ffreestanding \
-	-ftrivial-auto-var-init=pattern \
 	-I$(srcdir)/tests/include \
+	-I. \
+	-I$(srcdir) \
+	-I$(srcdir)/$(systype) \
+	-I$(srcdir)/i386 \
+	-I$(srcdir)/i386/i386 \
+	-I$(srcdir)/i386/include/mach/sa \
 	-I$(MACH_TESTINCLUDE) \
 	-I$(MIG_OUTDIR) \
 	-ggdb3 \
@@ -271,7 +276,7 @@ USER_TESTS := \
 	tests/test-valgrind \
 	tests/test-vdso \
 	tests/test-mach5-research \
-	tests/test-virtio
+	tests/test-virtio \
 	tests/test-kernel-feature
 
 USER_TESTS_CLEAN = $(subst tests/,clean-,$(USER_TESTS))

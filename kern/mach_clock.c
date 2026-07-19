@@ -835,3 +835,39 @@ boolean_t untimeout(void (*fcn)( void * param ), const void *param)
 	simple_unlock_irq(s, &timer_lock);
 	return (FALSE);
 }
+
+/*
+ *	clock_get_uptime()
+ *
+ *	Return monotonic time since boot. Provided for callers that were written
+ *	against a Darwin-style clock API; implemented here in terms of the
+ *	existing `uptime` global managed by the timer interrupt path.
+ */
+void
+clock_get_uptime(time_value_t *current_time)
+{
+	if (current_time == NULL)
+		return;
+	TIME_VALUE64_TO_TIME_VALUE(&uptime, current_time);
+}
+
+/*
+ *	clock_get_system_microtime()
+ *
+ *	Return current wallclock time as separate seconds / microseconds values.
+ *	Thin wrapper around the mapped time page so callers can pull a timestamp
+ *	without a host port.
+ */
+void
+clock_get_system_microtime(long_integer_t *secs, integer_t *microsecs)
+{
+	time_value64_t now;
+	time_value_t now32;
+
+	read_mapped_time(&now);
+	TIME_VALUE64_TO_TIME_VALUE(&now, &now32);
+	if (secs)
+		*secs = now32.seconds;
+	if (microsecs)
+		*microsecs = now32.microseconds;
+}

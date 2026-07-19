@@ -75,7 +75,7 @@ dynamic_probes_init(void)
     }
     
     dynamic_state.next_index = 0;
-    simple_lock_irq_init(&dynamic_state.lock);
+    simple_lock_init_irq(&dynamic_state.lock);
     dynamic_state.initialized = TRUE;
     
     printf("Dynamic probe subsystem initialized (%d slots available)\n", 

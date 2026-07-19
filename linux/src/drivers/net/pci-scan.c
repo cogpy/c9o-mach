@@ -453,31 +453,10 @@ void pci_drv_unregister(struct drv_id_info *drv_id)
 	return;
 }
 
-#if LINUX_VERSION_CODE < 0x20400
 /*
-  Search PCI configuration space for the specified capability registers.
-  Return the index, or 0 on failure.
-  The 2.4 kernel now includes this function.
-*/
-int pci_find_capability(struct pci_dev *pdev, int findtype)
-{
-	u16 pci_status, cap_type;
-	u8 pci_cap_idx;
-	int cap_idx;
-
-	pci_read_config_word(pdev, PCI_STATUS, &pci_status);
-	if ( ! (pci_status & PCI_STATUS_CAP_LIST))
-		return 0;
-	pci_read_config_byte(pdev, PCI_CAPABILITY_LIST, &pci_cap_idx);
-	cap_idx = pci_cap_idx;
-	for (cap_idx = pci_cap_idx; cap_idx; cap_idx = (cap_type >> 8) & 0xff) {
-		pci_read_config_word(pdev, cap_idx, &cap_type);
-		if ((cap_type & 0xff) == findtype)
-			return cap_idx;
-	}
-	return 0;
-}
-#endif
+ * pci_find_capability() is provided by drivers/pci/pci.c, which is always
+ * compiled (drivers/net/pci-scan.c is optional). Do not redefine it here.
+ */
 
 /* Change a device from D3 (sleep) to D0 (active).
    Return the old power state.
