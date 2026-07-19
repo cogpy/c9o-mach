@@ -430,8 +430,9 @@ jobs:
         # Extended test matrix for thorough validation
         TEST_COMMANDS=(
           "make run-hello:Basic functionality test"
-          "make run-mach_port:IPC functionality test" 
+          "make run-mach_port:IPC functionality test"
           "make run-console-timestamps:Console timestamp test"
+          "make run-cognitive:Cognitive primitives test"
         )
         
         cd build-${{ matrix.arch }}
