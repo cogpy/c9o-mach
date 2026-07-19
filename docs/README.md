@@ -17,6 +17,7 @@ This documentation set synthesizes the official GNU Mach manual into a practical
 - Kernel Debugger and Profiling: `debugger-and-profiling.md`
 - Host Interface: `host-interface.md`
 - CoGWXP-OS9 Integration: `cogwxp-integration.md`
+- Harvey OS Feature Port: `harvey-features.md`
 
 ## Diagram Conventions
 - Mermaid blocks are fenced as:
