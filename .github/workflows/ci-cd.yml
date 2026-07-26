@@ -19,6 +19,11 @@ on:
       - '.github/ISSUE_TEMPLATE/**'
   workflow_dispatch:
 
+# Workflow-level permissions (minimal required)
+permissions:
+  contents: read
+  actions: read
+
 # Cancel superseded runs: a new push to the same branch/PR aborts the
 # in-flight pipeline instead of running both to completion.
 concurrency:
