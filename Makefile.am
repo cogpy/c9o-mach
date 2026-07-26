@@ -296,9 +296,9 @@ DISTCLEANFILES += \
 install-headers: install-data
 	@echo '*****************************************************'
 	@echo '* As you can see above, I was so kind to rewrite your'
-	@echo '* `make $@'\'
+	@echo '* `make $@'\''
 	@echo '* into'
-	@echo '* `make $^'\'
+	@echo '* `make $^'\''
 	@echo '* which is how it is to be spelled these days.'
 	@echo '*'
 	@echo '* Please get your instructions fixed.'
@@ -306,3 +306,191 @@ install-headers: install-data
 	@echo
 	@echo 'Penalty:'
 	sleep 20
+
+#
+# Packaging: Bootable ISO and Installer
+#
+
+# Architecture detection for ISO naming
+ISO_ARCH = $(systype)
+
+# Build directories for packaging
+PACKAGING_DIR = $(top_srcdir)/packaging
+ISO_BUILD_DIR = $(builddir)/iso-build
+ROOTFS_DIR = $(builddir)/rootfs-build
+
+# ISO output names
+ISO_LIVE = c9o-mach-live-$(ISO_ARCH).iso
+ISO_INSTALL = c9o-mach-install-$(ISO_ARCH).iso
+
+# GRUB configuration templates
+GRUB_LIVE_TEMPLATE = $(PACKAGING_DIR)/iso/grub.cfg.live.template
+GRUB_INSTALL_TEMPLATE = $(PACKAGING_DIR)/iso/grub.cfg.install.template
+
+# Build ISO script
+BUILD_ISO_SCRIPT = $(PACKAGING_DIR)/iso/build-iso.sh
+
+# Installer sources (conditionally built)
+if ENABLE_INSTALLER
+INSTALLER_SOURCES = \
+	$(PACKAGING_DIR)/installer/main.c \
+	$(PACKAGING_DIR)/installer/disk.c \
+	$(PACKAGING_DIR)/installer/partition.c \
+	$(PACKAGING_DIR)/installer/filesystem.c \
+	$(PACKAGING_DIR)/installer/bootloader.c \
+	$(PACKAGING_DIR)/installer/ui.c \
+	$(PACKAGING_DIR)/installer/utils.c
+
+INSTALLER_CFLAGS = \
+	-ffreestanding \
+	-nostdlib \
+	-m32 \
+	-I$(top_srcdir)/include \
+	-I$(top_srcdir)/$(systype)/include/mach/sa \
+	-I$(top_srcdir)/tests \
+	-DMACH_IPC_COMPAT=0 \
+	-DMIG_COMPAT=0
+
+installer: $(INSTALLER_SOURCES) gnumach
+	@echo "Building installer binary..."
+	$(CC) $(INSTALLER_CFLAGS) -c $(PACKAGING_DIR)/installer/main.c -o $(builddir)/installer-main.o
+	$(CC) $(INSTALLER_CFLAGS) -c $(PACKAGING_DIR)/installer/disk.c -o $(builddir)/installer-disk.o
+	$(CC) $(INSTALLER_CFLAGS) -c $(PACKAGING_DIR)/installer/partition.c -o $(builddir)/installer-partition.o
+	$(CC) $(INSTALLER_CFLAGS) -c $(PACKAGING_DIR)/installer/filesystem.c -o $(builddir)/installer-filesystem.o
+	$(CC) $(INSTALLER_CFLAGS) -c $(PACKAGING_DIR)/installer/bootloader.c -o $(builddir)/installer-bootloader.o
+	$(CC) $(INSTALLER_CFLAGS) -c $(PACKAGING_DIR)/installer/ui.c -o $(builddir)/installer-ui.o
+	$(CC) $(INSTALLER_CFLAGS) -c $(PACKAGING_DIR)/installer/utils.c -o $(builddir)/installer-utils.o
+	$(LD) -m elf_i386 -N -Ttext 0x10000 \
+		$(builddir)/installer-main.o \
+		$(builddir)/installer-disk.o \
+		$(builddir)/installer-partition.o \
+		$(builddir)/installer-filesystem.o \
+		$(builddir)/installer-bootloader.o \
+		$(builddir)/installer-ui.o \
+		$(builddir)/installer-utils.o \
+		$(builddir)/tests/testlib.o \
+		-o $(builddir)/installer
+	@echo "Installer binary built: $(builddir)/installer"
+
+MOSTLYCLEANFILES += \
+	$(builddir)/installer \
+	$(builddir)/installer-*.o
+endif
+
+# Create minimal rootfs image
+rootfs.img: gnumach
+	@echo "Creating minimal rootfs image..."
+	@mkdir -p $(ROOTFS_DIR)
+	@# Create a simple rootfs with the kernel
+	dd if=/dev/zero of=$(builddir)/rootfs.img bs=1M count=32
+	@echo "Rootfs image created: $(builddir)/rootfs.img"
+
+MOSTLYCLEANFILES += $(builddir)/rootfs.img
+
+# Live ISO target
+if ENABLE_LIVE_ISO
+iso-live: gnumach rootfs.img
+	@echo "Building live ISO: $(ISO_LIVE)"
+	@mkdir -p $(ISO_BUILD_DIR)/boot/grub
+	@mkdir -p $(ISO_BUILD_DIR)/boot/modules
+	@cp $(builddir)/gnumach $(ISO_BUILD_DIR)/boot/
+	@cp $(builddir)/rootfs.img $(ISO_BUILD_DIR)/boot/modules/
+	@sed -e 's/@KERNEL_PARAMS@/live console=com0 console_timestamps=on/' \
+		$(GRUB_LIVE_TEMPLATE) > $(ISO_BUILD_DIR)/boot/grub/grub.cfg
+	grub-mkrescue -o $(builddir)/$(ISO_LIVE) $(ISO_BUILD_DIR)
+	@echo "Live ISO created: $(builddir)/$(ISO_LIVE)"
+
+iso-live-test: iso-live
+	@echo "Testing live ISO in QEMU..."
+	qemu-system-i386 -m 512 -cdrom $(builddir)/$(ISO_LIVE) -serial stdio -boot d
+endif
+
+# Install ISO target
+if ENABLE_INSTALL_ISO
+if ENABLE_INSTALLER
+iso-install: gnumach installer rootfs.img
+	@echo "Building install ISO: $(ISO_INSTALL)"
+	@mkdir -p $(ISO_BUILD_DIR)/boot/grub
+	@mkdir -p $(ISO_BUILD_DIR)/boot/modules
+	@cp $(builddir)/gnumach $(ISO_BUILD_DIR)/boot/
+	@cp $(builddir)/installer $(ISO_BUILD_DIR)/boot/modules/
+	@cp $(builddir)/rootfs.img $(ISO_BUILD_DIR)/boot/modules/
+	@sed -e 's/@KERNEL_PARAMS@/install console=com0 console_timestamps=on/' \
+		$(GRUB_INSTALL_TEMPLATE) > $(ISO_BUILD_DIR)/boot/grub/grub.cfg
+	grub-mkrescue -o $(builddir)/$(ISO_INSTALL) $(ISO_BUILD_DIR)
+	@echo "Install ISO created: $(builddir)/$(ISO_INSTALL)"
+
+iso-install-test: iso-install
+	@echo "Testing install ISO in QEMU..."
+	qemu-system-i386 -m 512 -cdrom $(builddir)/$(ISO_INSTALL) -serial stdio -boot d \
+		-drive file=$(builddir)/test-disk.img,format=raw,if=ide
+endif
+endif
+
+# Convenience targets
+.PHONY: iso iso-live iso-live-test iso-install iso-install-test iso-full iso-all iso-clean iso-test
+
+# Default ISO target (alias for iso-live if enabled)
+if ENABLE_LIVE_ISO
+iso: iso-live
+else
+iso:
+	@echo "ISO building not enabled. Configure with --enable-live-iso"
+	@exit 1
+endif
+
+# Full ISO build (both live and install)
+if ENABLE_LIVE_ISO
+if ENABLE_INSTALL_ISO
+if ENABLE_INSTALLER
+iso-full: iso-live iso-install
+	@echo "Both ISOs built successfully"
+else
+iso-full: iso-live
+	@echo "Installer not enabled, only live ISO built"
+endif
+else
+iso-full: iso-live
+	@echo "Install ISO not enabled, only live ISO built"
+endif
+else
+iso-full:
+	@echo "ISO building not enabled. Configure with --enable-live-iso and/or --enable-install-iso"
+	@exit 1
+endif
+
+# Build all ISOs for all architectures (placeholder for cross-compilation)
+iso-all: iso-full
+	@echo "All configured ISOs built"
+
+# Clean ISO build artifacts
+iso-clean:
+	rm -rf $(ISO_BUILD_DIR)
+	rm -rf $(ROOTFS_DIR)
+	rm -f $(builddir)/$(ISO_LIVE)
+	rm -f $(builddir)/$(ISO_INSTALL)
+	rm -f $(builddir)/rootfs.img
+	rm -f $(builddir)/installer
+	rm -f $(builddir)/installer-*.o
+
+# Test ISO in QEMU (runs validation script)
+iso-test:
+	@if test -f $(builddir)/$(ISO_LIVE); then \
+		$(top_srcdir)/scripts/validate-iso.sh --boot-test $(builddir)/$(ISO_LIVE); \
+	elif test -f $(builddir)/$(ISO_INSTALL); then \
+		$(top_srcdir)/scripts/validate-iso.sh --boot-test $(builddir)/$(ISO_INSTALL); \
+	else \
+		echo "No ISO found. Run 'make iso' first."; \
+		exit 1; \
+	fi
+
+# Validate ISO structure without booting
+iso-validate:
+	@if test -f $(builddir)/$(ISO_LIVE); then \
+		$(top_srcdir)/scripts/validate-iso.sh $(builddir)/$(ISO_LIVE); \
+	elif test -f $(builddir)/$(ISO_INSTALL); then \
+		$(top_srcdir)/scripts/validate-iso.sh $(builddir)/$(ISO_INSTALL); \
+	else \
+		echo "No ISO found. Run 'make iso' first."; \
+		exit 1; \
+	fi

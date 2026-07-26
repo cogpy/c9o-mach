@@ -236,6 +236,65 @@ if test "x$tickless_timer" = "xyes"; then
   AC_DEFINE([TICKLESS_TIMER], [1], [Define to enable tickless timer operation])
 fi
 
+# Packaging options for bootable OS
+AC_ARG_ENABLE([installer],
+  AS_HELP_STRING([--enable-installer], 
+    [build the installer binary for OS installation @<:@default=no@:>@]),
+  [enable_installer="$enableval"],
+  [enable_installer="no"])
+
+AM_CONDITIONAL([ENABLE_INSTALLER], [test "x$enable_installer" = "xyes"])
+
+AC_ARG_ENABLE([live-iso],
+  AS_HELP_STRING([--enable-live-iso], 
+    [enable live ISO building capabilities @<:@default=no@:>@]),
+  [enable_live_iso="$enableval"],
+  [enable_live_iso="no"])
+
+AM_CONDITIONAL([ENABLE_LIVE_ISO], [test "x$enable_live_iso" = "xyes"])
+
+AC_ARG_ENABLE([install-iso],
+  AS_HELP_STRING([--enable-install-iso], 
+    [enable installation ISO building capabilities @<:@default=no@:>@]),
+  [enable_install_iso="$enableval"],
+  [enable_install_iso="no"])
+
+AM_CONDITIONAL([ENABLE_INSTALL_ISO], [test "x$enable_install_iso" = "xyes"])
+
+AC_ARG_WITH([rootfs],
+  AS_HELP_STRING([--with-rootfs=TYPE], 
+    [rootfs type for ISO: minimal or full @<:@default=minimal@:>@]),
+  [rootfs_type="$withval"],
+  [rootfs_type="minimal"])
+
+AC_SUBST([ROOTFS_TYPE], ["$rootfs_type"])
+
+# Check for ISO building tools if packaging is enabled
+if test "x$enable_live_iso" = "xyes" -o "x$enable_install_iso" = "xyes"; then
+  AC_CHECK_PROG([GRUB_MKRESCUE], [grub-mkrescue], [grub-mkrescue], [no])
+  if test "x$GRUB_MKRESCUE" = "xno"; then
+    AC_MSG_WARN([grub-mkrescue not found, ISO building will not be available])
+  fi
+  
+  AC_CHECK_PROG([XORRISO], [xorriso], [xorriso], [no])
+  if test "x$XORRISO" = "xno"; then
+    AC_MSG_WARN([xorriso not found, ISO building may not work correctly])
+  fi
+  
+  AC_CHECK_PROG([MTOOLS], [mcopy], [yes], [no])
+  if test "x$MTOOLS" = "xno"; then
+    AC_MSG_WARN([mtools not found, FAT filesystem support in ISOs may not work])
+  fi
+fi
+
+# Check for installer dependencies
+if test "x$enable_installer" = "xyes"; then
+  AC_CHECK_PROG([MKE2FS], [mke2fs], [mke2fs], [no])
+  if test "x$MKE2FS" = "xno"; then
+    AC_MSG_WARN([mke2fs not found, ext2 filesystem creation in installer may be limited])
+  fi
+fi
+
 # Platform-specific configuration.
 
 # PC AT.
@@ -406,6 +465,12 @@ AC_MSG_NOTICE([  Strict warnings: $strict_warnings])
 AC_MSG_NOTICE([  Tickless timer: $tickless_timer])
 AC_MSG_NOTICE([  Stack protector: $ssp_possible])
 AC_MSG_NOTICE([  MIG tool: $MIG])
+AC_MSG_NOTICE([])
+AC_MSG_NOTICE([Packaging options:])
+AC_MSG_NOTICE([  Build installer: $enable_installer])
+AC_MSG_NOTICE([  Live ISO support: $enable_live_iso])
+AC_MSG_NOTICE([  Install ISO support: $enable_install_iso])
+AC_MSG_NOTICE([  Rootfs type: $rootfs_type])
 AC_MSG_NOTICE([])
 
 #
