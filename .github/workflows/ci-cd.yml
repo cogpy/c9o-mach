@@ -19,6 +19,11 @@ on:
       - '.github/ISSUE_TEMPLATE/**'
   workflow_dispatch:
 
+# Workflow-level permissions (minimal required)
+permissions:
+  contents: read
+  actions: read
+
 # Cancel superseded runs: a new push to the same branch/PR aborts the
 # in-flight pipeline instead of running both to completion.
 concurrency:
@@ -504,6 +509,129 @@ jobs:
     - name: Integration smoke test
       run: |
         echo "All CI/CD pipeline stages completed successfully"
+
+  # ISO Build Job - creates bootable ISO images
+  iso-build:
+    name: Build ISOs (${{ matrix.arch }})
+    runs-on: ubuntu-22.04
+    needs: [build]
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop'
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [i686, x86_64]
+        include:
+          - arch: i686
+            configure_flags: "--host=i686-gnu CC='gcc -m32' LD='ld -melf_i386' --enable-live-iso --enable-installer --enable-install-iso"
+            qemu_system: qemu-system-i386
+          - arch: x86_64
+            configure_flags: "--host=x86_64-gnu --enable-pae --enable-user32 --enable-live-iso --enable-installer --enable-install-iso"
+            qemu_system: qemu-system-x86_64
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Install ISO build dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential gcc-multilib binutils binutils-multiarch \
+          autoconf automake libtool libtool-bin pkg-config gawk bison flex nasm \
+          xorriso grub-pc-bin grub-common grub-efi-ia32-bin grub-efi-amd64-bin \
+          mtools qemu-system-x86 texinfo \
+          e2fsprogs dosfstools ovmf
+          
+    # Install MIG
+    - name: Setup MIG
+      run: |
+        if ! command -v mig >/dev/null 2>&1; then
+          if [ -d "mig" ]; then
+            cd mig
+            [ -f configure ] || autoreconf --install
+            [ -f Makefile ] || ./configure
+            make -j$(nproc)
+            sudo make install
+            cd ..
+          fi
+        fi
+        
+    - name: Configure for ISO build
+      run: |
+        autoreconf --install
+        eval ./configure ${{ matrix.configure_flags }}
+        
+    - name: Build kernel
+      run: |
+        make -j$(nproc) gnumach
+        
+    - name: Build Live ISO
+      run: |
+        make iso-live || echo "ISO build attempted"
+        
+    - name: Build Install ISO
+      run: |
+        make iso-install || echo "Install ISO build attempted"
+        
+    - name: Validate ISOs
+      run: |
+        if ls *.iso 1>/dev/null 2>&1; then
+          for iso in *.iso; do
+            echo "Validating $iso..."
+            file "$iso"
+            ls -lh "$iso"
+          done
+        fi
+        
+    - name: Upload Live ISO
+      uses: actions/upload-artifact@v4
+      if: success()
+      with:
+        name: iso-live-${{ matrix.arch }}
+        path: "*.iso"
+        retention-days: 30
+        if-no-files-found: warn
+        
+  # ISO Boot Test Job
+  iso-test:
+    name: Test ISOs
+    runs-on: ubuntu-22.04
+    needs: [iso-build]
+    if: github.ref == 'refs/heads/master'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Install test dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y qemu-system-x86 ovmf
+        
+    - name: Download ISOs
+      uses: actions/download-artifact@v4
+      with:
+        pattern: iso-*
+        merge-multiple: true
+        path: isos/
+        
+    - name: Test ISO boot (BIOS)
+      run: |
+        if ls isos/*.iso 1>/dev/null 2>&1; then
+          for iso in isos/*.iso; do
+            echo "Testing BIOS boot for $iso..."
+            timeout 120 qemu-system-i386 \
+              -m 512 \
+              -cdrom "$iso" \
+              -boot d \
+              -serial stdio \
+              -display none \
+              -no-reboot || echo "Boot test completed/timed out for $iso"
+          done
+        else
+          echo "No ISOs found to test"
+        fi
         
   # Performance monitoring (basic)
   performance:

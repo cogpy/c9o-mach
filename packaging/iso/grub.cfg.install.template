@@ -1,0 +1,85 @@
+# GRUB Configuration for c9o-mach Installer
+# Copyright (C) 2024 Free Software Foundation
+#
+# This file is part of GNU Mach.
+#
+# GNU Mach is free software; you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+
+set timeout=10
+set default=0
+
+# Colors and appearance
+set menu_color_normal=white/black
+set menu_color_highlight=black/light-gray
+
+# Terminal settings
+terminal_output console
+terminal_input console
+
+menuentry "Install c9o-mach" {
+    echo "Starting c9o-mach installation..."
+    multiboot /boot/gnumach console=com0 install root=ramdisk
+    echo "Loading installer..."
+    module /boot/modules/rootfs.img rootfs
+    module /boot/modules/installer installer
+    boot
+}
+
+menuentry "Install c9o-mach (Expert Mode)" {
+    echo "Starting c9o-mach installation in expert mode..."
+    multiboot /boot/gnumach console=com0 install expert root=ramdisk verbose
+    module /boot/modules/rootfs.img rootfs
+    module /boot/modules/installer installer
+    boot
+}
+
+menuentry "Install c9o-mach (with Debug Output)" {
+    echo "Starting c9o-mach installation with debug output..."
+    multiboot /boot/gnumach console=com0 install debug root=ramdisk console_timestamps=on
+    module /boot/modules/rootfs.img rootfs
+    module /boot/modules/installer installer
+    boot
+}
+
+menuentry "c9o-mach Live Environment" {
+    echo "Loading c9o-mach live environment..."
+    multiboot /boot/gnumach console=com0 live root=ramdisk
+    module /boot/modules/rootfs.img rootfs
+    boot
+}
+
+menuentry "c9o-mach Rescue Mode" {
+    echo "Loading c9o-mach rescue environment..."
+    multiboot /boot/gnumach console=com0 rescue root=ramdisk single
+    module /boot/modules/rootfs.img rootfs
+    boot
+}
+
+menuentry "Hardware Detection" {
+    echo "Detecting hardware..."
+    multiboot /boot/gnumach console=com0 live root=ramdisk hwdetect verbose
+    module /boot/modules/rootfs.img rootfs
+    boot
+}
+
+menuentry "Memory Test (memtest86+)" {
+    echo "Loading memory test..."
+    linux16 /boot/memtest86+.bin
+}
+
+menuentry "Boot from Hard Disk" {
+    echo "Booting from first hard disk..."
+    set root=(hd0)
+    chainloader +1
+}
+
+menuentry "Reboot" {
+    reboot
+}
+
+menuentry "Shutdown" {
+    halt
+}

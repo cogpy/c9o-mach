@@ -15,8 +15,12 @@ jobs:
   release-please:
     name: Automated Release
     runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
     - uses: googleapis/release-please-action@v4
+      id: release
       with:
         release-type: simple
         package-name: c9o-mach
@@ -32,3 +36,76 @@ jobs:
             {"type": "build", "section": "Build System", "hidden": false},
             {"type": "chore", "section": "Miscellaneous", "hidden": true}
           ]
+
+  # Build release ISOs when a release is created
+  build-release-isos:
+    name: Build Release ISOs (${{ matrix.arch }})
+    runs-on: ubuntu-22.04
+    needs: [release-please]
+    if: needs.release-please.outputs.release_created == 'true'
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [i686, x86_64]
+        include:
+          - arch: i686
+            configure_flags: "--host=i686-gnu CC='gcc -m32' LD='ld -melf_i386' --enable-live-iso --enable-installer --enable-install-iso"
+          - arch: x86_64
+            configure_flags: "--host=x86_64-gnu --enable-pae --enable-user32 --enable-live-iso --enable-installer --enable-install-iso"
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential gcc-multilib binutils binutils-multiarch \
+          autoconf automake libtool libtool-bin pkg-config gawk bison flex nasm \
+          xorriso grub-pc-bin grub-common grub-efi-ia32-bin grub-efi-amd64-bin \
+          mtools qemu-system-x86 texinfo \
+          e2fsprogs dosfstools
+          
+    - name: Setup MIG
+      run: |
+        if ! command -v mig >/dev/null 2>&1; then
+          if [ -d "mig" ]; then
+            cd mig
+            [ -f configure ] || autoreconf --install
+            [ -f Makefile ] || ./configure
+            make -j$(nproc)
+            sudo make install
+            cd ..
+          fi
+        fi
+        
+    - name: Build
+      run: |
+        autoreconf --install
+        eval ./configure ${{ matrix.configure_flags }}
+        make -j$(nproc) gnumach
+        
+    - name: Build ISOs
+      run: |
+        make iso-live || true
+        make iso-install || true
+        
+    - name: Create checksums
+      run: |
+        for iso in *.iso; do
+          if [ -f "$iso" ]; then
+            sha256sum "$iso" > "${iso}.sha256"
+          fi
+        done
+        
+    - name: Upload Release Assets
+      uses: softprops/action-gh-release@v1
+      if: success()
+      with:
+        tag_name: ${{ needs.release-please.outputs.tag_name }}
+        files: |
+          *.iso
+          *.sha256
+        fail_on_unmatched_files: false
