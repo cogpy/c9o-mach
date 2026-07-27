@@ -5,6 +5,19 @@ All notable changes to the c9o-mach project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0](https://github.com/cogpy/c9o-mach/compare/v1.0.3...v1.1.0) (2026-07-27)
+
+
+### Features
+
+* **packaging:** implement bootable OS with GRUB bootloader and installer binaries ([7f79a84](https://github.com/cogpy/c9o-mach/commit/7f79a848cee213447451f3dfed63fd1e6960a7f2))
+* **packaging:** integrate build system for bootable ISOs and installer ([1090f23](https://github.com/cogpy/c9o-mach/commit/1090f23b3b2b81df4986c1817896a9bf32052aab))
+
+
+### Bug Fixes
+
+* **ci:** add workflow-level permissions to CI/CD pipeline ([5425d7e](https://github.com/cogpy/c9o-mach/commit/5425d7ef235970fc3b400a540ec27642571ae0e4))
+
 ## [1.0.3](https://github.com/cogpy/c9o-mach/compare/v1.0.2...v1.0.3) (2026-05-02)
 
 
