@@ -5,6 +5,14 @@ All notable changes to the c9o-mach project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1](https://github.com/cogpy/c9o-mach/compare/v1.1.0...v1.1.1) (2026-07-27)
+
+
+### Bug Fixes
+
+* avoid self-including provenance archive ([4240013](https://github.com/cogpy/c9o-mach/commit/42400135f549745abb2b72f0fce89f19d83c1357))
+* stage Mach headers before building MIG in release workflow ([4470c64](https://github.com/cogpy/c9o-mach/commit/4470c64b2478e72734c4b2e618dbced4f9ff62fa))
+
 ## [1.1.0](https://github.com/cogpy/c9o-mach/compare/v1.0.3...v1.1.0) (2026-07-27)
 
 
