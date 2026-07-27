@@ -299,8 +299,9 @@ jobs:
       id: subjects
       run: |
         set -euo pipefail
-        tar --exclude=.git -czf c9o-mach-source.tar.gz .
-        echo "base64_subjects=$(sha256sum c9o-mach-source.tar.gz | base64 -w0)" >> "$GITHUB_OUTPUT"
+        archive="$(mktemp /tmp/c9o-mach-source.XXXXXX.tar.gz)"
+        tar --exclude=.git -czf "$archive" .
+        echo "base64_subjects=$(sha256sum "$archive" | base64 -w0)" >> "$GITHUB_OUTPUT"
 
   # ── Job 7: SLSA3 Provenance (from cogfernos) ──
   provenance:
