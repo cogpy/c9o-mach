@@ -72,9 +72,12 @@ jobs:
       run: |
         if ! command -v mig >/dev/null 2>&1; then
           if [ -d "mig" ]; then
+            sudo mkdir -p /usr/include/mach
+            sudo cp -r include/mach/* /usr/include/mach/
+            sudo ln -sf "$(pwd)/i386/include/mach/i386" /usr/include/mach/machine
             cd mig
             [ -f configure ] || autoreconf --install
-            [ -f Makefile ] || ./configure
+            [ -f Makefile ] || ./configure CPPFLAGS="-I/usr/include"
             make -j$(nproc)
             sudo make install
             cd ..
