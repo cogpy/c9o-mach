@@ -284,10 +284,28 @@ jobs:
         path: test-results-${{ matrix.arch }}.log
         retention-days: 14
 
+  provenance_subjects:
+    name: Prepare SLSA subjects
+    runs-on: ubuntu-22.04
+    needs: [build, test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    permissions:
+      contents: read
+    outputs:
+      base64_subjects: ${{ steps.subjects.outputs.base64_subjects }}
+    steps:
+    - uses: actions/checkout@v4
+    - name: Generate source archive subject
+      id: subjects
+      run: |
+        set -euo pipefail
+        tar --exclude=.git -czf c9o-mach-source.tar.gz .
+        echo "base64_subjects=$(sha256sum c9o-mach-source.tar.gz | base64 -w0)" >> "$GITHUB_OUTPUT"
+
   # ── Job 7: SLSA3 Provenance (from cogfernos) ──
   provenance:
     name: Generate SLSA Provenance
-    needs: [build, test]
+    needs: [build, test, provenance_subjects]
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     permissions:
       actions: read
@@ -295,5 +313,5 @@ jobs:
       contents: write
     uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.0.0
     with:
-      base64-subjects: ""
+      base64-subjects: ${{ needs.provenance_subjects.outputs.base64_subjects }}
       upload-assets: false
