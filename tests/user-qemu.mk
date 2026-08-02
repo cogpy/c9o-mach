@@ -168,7 +168,14 @@ tests/errlist.c: $(addprefix $(srcdir)/include/mach/,message.h kern_return.h mig
 	echo "}}"  >>$@
 
 tests/module-%: $(srcdir)/tests/test-%.c $(SRC_TESTLIB) $(MACH_TESTINSTALL)
-	$(USER_CC) $(USER_CFLAGS) $(TESTCFLAGS) $< $(SRC_TESTLIB) -o $@
+	$(USER_CC) $(USER_CFLAGS) $(TESTCFLAGS) $< $(SRC_TESTLIB) $(EXTRA_TEST_SRC) -o $@
+
+# Kernel sources exercised directly by a test module.  Kept empty by
+# default and overridden per test below.
+EXTRA_TEST_SRC =
+
+tests/module-boot-params: EXTRA_TEST_SRC = $(srcdir)/kern/boot_params.c
+tests/module-boot-params: $(srcdir)/kern/boot_params.c
 
 #
 # packaging of qemu bootable image and test runner
@@ -231,6 +238,7 @@ clean-test-%:
 
 USER_TESTS := \
 	tests/test-hello \
+	tests/test-boot-params \
 	tests/test-mach_host \
 	tests/test-gsync \
 	tests/test-mach_port \

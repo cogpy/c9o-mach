@@ -312,7 +312,7 @@ install-headers: install-data
 #
 
 # Architecture detection for ISO naming
-ISO_ARCH = $(systype)
+ISO_ARCH = $(host_cpu)
 
 # Build directories for packaging
 PACKAGING_DIR = $(top_srcdir)/packaging
@@ -330,6 +330,44 @@ GRUB_INSTALL_TEMPLATE = $(PACKAGING_DIR)/iso/grub.cfg.install.template
 # Build ISO script
 BUILD_ISO_SCRIPT = $(PACKAGING_DIR)/iso/build-iso.sh
 
+# Rootfs builder
+BUILD_ROOTFS_SCRIPT = $(PACKAGING_DIR)/rootfs/build-rootfs.sh
+
+# The bootstrap tasks shipped on the media (init and the installer) are
+# ordinary Mach user space programs.  They are built with the same
+# freestanding environment as the QEMU test modules, see
+# tests/user-qemu.mk, and share the command line parsing of the kernel.
+BOOTSTRAP_SRC = $(srcdir)/kern/boot_params.c $(SRC_TESTLIB)
+
+INIT_SOURCES = \
+	$(srcdir)/init/main.c \
+	$(srcdir)/init/services.c
+
+# Named c9o-init to avoid clashing with the init/ source directory when
+# building in the source tree.  It is installed as /boot/init on the ISO.
+c9o-init: $(INIT_SOURCES) $(BOOTSTRAP_SRC) $(MACH_TESTINSTALL)
+	$(USER_CC) $(USER_CFLAGS) $(TESTCFLAGS) -I$(srcdir)/init \
+		$(INIT_SOURCES) $(BOOTSTRAP_SRC) -o $@
+
+MOSTLYCLEANFILES += c9o-init
+
+EXTRA_DIST += \
+	$(INIT_SOURCES) \
+	init/init.h \
+	packaging/installer/installer.h \
+	packaging/installer/main.c \
+	packaging/installer/disk.c \
+	packaging/installer/partition.c \
+	packaging/installer/filesystem.c \
+	packaging/installer/bootloader.c \
+	packaging/installer/ui.c \
+	packaging/installer/utils.c \
+	packaging/iso/build-iso.sh \
+	packaging/iso/grub.cfg.live.template \
+	packaging/iso/grub.cfg.install.template \
+	packaging/rootfs/build-rootfs.sh \
+	scripts/validate-iso.sh
+
 # Installer sources (conditionally built)
 if ENABLE_INSTALLER
 INSTALLER_SOURCES = \
@@ -341,94 +379,51 @@ INSTALLER_SOURCES = \
 	$(PACKAGING_DIR)/installer/ui.c \
 	$(PACKAGING_DIR)/installer/utils.c
 
-INSTALLER_CFLAGS = \
-	-ffreestanding \
-	-nostdlib \
-	-m32 \
-	-I$(top_srcdir)/include \
-	-I$(top_srcdir)/$(systype)/include/mach/sa \
-	-I$(top_srcdir)/tests \
-	-DMACH_IPC_COMPAT=0 \
-	-DMIG_COMPAT=0
+installer: $(INSTALLER_SOURCES) $(BOOTSTRAP_SRC) $(MACH_TESTINSTALL)
+	$(USER_CC) $(USER_CFLAGS) $(TESTCFLAGS) -I$(PACKAGING_DIR)/installer \
+		$(INSTALLER_SOURCES) $(BOOTSTRAP_SRC) -o $@
 
-installer: $(INSTALLER_SOURCES) gnumach
-	@echo "Building installer binary..."
-	$(CC) $(INSTALLER_CFLAGS) -c $(PACKAGING_DIR)/installer/main.c -o $(builddir)/installer-main.o
-	$(CC) $(INSTALLER_CFLAGS) -c $(PACKAGING_DIR)/installer/disk.c -o $(builddir)/installer-disk.o
-	$(CC) $(INSTALLER_CFLAGS) -c $(PACKAGING_DIR)/installer/partition.c -o $(builddir)/installer-partition.o
-	$(CC) $(INSTALLER_CFLAGS) -c $(PACKAGING_DIR)/installer/filesystem.c -o $(builddir)/installer-filesystem.o
-	$(CC) $(INSTALLER_CFLAGS) -c $(PACKAGING_DIR)/installer/bootloader.c -o $(builddir)/installer-bootloader.o
-	$(CC) $(INSTALLER_CFLAGS) -c $(PACKAGING_DIR)/installer/ui.c -o $(builddir)/installer-ui.o
-	$(CC) $(INSTALLER_CFLAGS) -c $(PACKAGING_DIR)/installer/utils.c -o $(builddir)/installer-utils.o
-	$(LD) -m elf_i386 -N -Ttext 0x10000 \
-		$(builddir)/installer-main.o \
-		$(builddir)/installer-disk.o \
-		$(builddir)/installer-partition.o \
-		$(builddir)/installer-filesystem.o \
-		$(builddir)/installer-bootloader.o \
-		$(builddir)/installer-ui.o \
-		$(builddir)/installer-utils.o \
-		$(builddir)/tests/testlib.o \
-		-o $(builddir)/installer
-	@echo "Installer binary built: $(builddir)/installer"
-
-MOSTLYCLEANFILES += \
-	$(builddir)/installer \
-	$(builddir)/installer-*.o
+MOSTLYCLEANFILES += installer
 endif
 
-# Create minimal rootfs image
-rootfs.img: gnumach
-	@echo "Creating minimal rootfs image..."
-	@mkdir -p $(ROOTFS_DIR)
-	@# Create a simple rootfs with the kernel
-	dd if=/dev/zero of=$(builddir)/rootfs.img bs=1M count=32
-	@echo "Rootfs image created: $(builddir)/rootfs.img"
+# Create the rootfs image loaded as a multiboot module
+rootfs.img: $(BUILD_ROOTFS_SCRIPT)
+	$(BUILD_ROOTFS_SCRIPT) --type $(ROOTFS_TYPE) --arch $(ISO_ARCH) \
+		--build-dir $(ROOTFS_DIR) --output rootfs.img
 
 MOSTLYCLEANFILES += $(builddir)/rootfs.img
 
 # Live ISO target
 if ENABLE_LIVE_ISO
-iso-live: gnumach rootfs.img
-	@echo "Building live ISO: $(ISO_LIVE)"
-	@mkdir -p $(ISO_BUILD_DIR)/boot/grub
-	@mkdir -p $(ISO_BUILD_DIR)/boot/modules
-	@cp $(builddir)/gnumach $(ISO_BUILD_DIR)/boot/
-	@cp $(builddir)/rootfs.img $(ISO_BUILD_DIR)/boot/modules/
-	@sed -e 's/@KERNEL_PARAMS@/live console=com0 console_timestamps=on/' \
-		$(GRUB_LIVE_TEMPLATE) > $(ISO_BUILD_DIR)/boot/grub/grub.cfg
-	grub-mkrescue -o $(builddir)/$(ISO_LIVE) $(ISO_BUILD_DIR)
-	@echo "Live ISO created: $(builddir)/$(ISO_LIVE)"
+iso-live: gnumach c9o-init rootfs.img
+	$(BUILD_ISO_SCRIPT) --type live --arch $(ISO_ARCH)		\
+		--kernel $(builddir)/gnumach --init $(builddir)/c9o-init	\
+		--rootfs $(builddir)/rootfs.img				\
+		--version $(VERSION)					\
+		--output $(builddir) --build-dir $(ISO_BUILD_DIR)
 
 iso-live-test: iso-live
-	@echo "Testing live ISO in QEMU..."
-	qemu-system-i386 -m 512 -cdrom $(builddir)/$(ISO_LIVE) -serial stdio -boot d
+	$(top_srcdir)/scripts/validate-iso.sh --boot-test $(builddir)/$(ISO_LIVE)
 endif
 
 # Install ISO target
 if ENABLE_INSTALL_ISO
 if ENABLE_INSTALLER
-iso-install: gnumach installer rootfs.img
-	@echo "Building install ISO: $(ISO_INSTALL)"
-	@mkdir -p $(ISO_BUILD_DIR)/boot/grub
-	@mkdir -p $(ISO_BUILD_DIR)/boot/modules
-	@cp $(builddir)/gnumach $(ISO_BUILD_DIR)/boot/
-	@cp $(builddir)/installer $(ISO_BUILD_DIR)/boot/modules/
-	@cp $(builddir)/rootfs.img $(ISO_BUILD_DIR)/boot/modules/
-	@sed -e 's/@KERNEL_PARAMS@/install console=com0 console_timestamps=on/' \
-		$(GRUB_INSTALL_TEMPLATE) > $(ISO_BUILD_DIR)/boot/grub/grub.cfg
-	grub-mkrescue -o $(builddir)/$(ISO_INSTALL) $(ISO_BUILD_DIR)
-	@echo "Install ISO created: $(builddir)/$(ISO_INSTALL)"
+iso-install: gnumach c9o-init installer rootfs.img
+	$(BUILD_ISO_SCRIPT) --type install --arch $(ISO_ARCH)		\
+		--kernel $(builddir)/gnumach --init $(builddir)/c9o-init	\
+		--installer $(builddir)/installer			\
+		--rootfs $(builddir)/rootfs.img				\
+		--version $(VERSION)					\
+		--output $(builddir) --build-dir $(ISO_BUILD_DIR)
 
 iso-install-test: iso-install
-	@echo "Testing install ISO in QEMU..."
-	qemu-system-i386 -m 512 -cdrom $(builddir)/$(ISO_INSTALL) -serial stdio -boot d \
-		-drive file=$(builddir)/test-disk.img,format=raw,if=ide
+	$(top_srcdir)/scripts/validate-iso.sh --boot-test $(builddir)/$(ISO_INSTALL)
 endif
 endif
 
 # Convenience targets
-.PHONY: iso iso-live iso-live-test iso-install iso-install-test iso-full iso-all iso-clean iso-test
+.PHONY: iso iso-live iso-live-test iso-install iso-install-test iso-full iso-all iso-clean iso-test iso-validate
 
 # Default ISO target (alias for iso-live if enabled)
 if ENABLE_LIVE_ISO
@@ -471,7 +466,7 @@ iso-clean:
 	rm -f $(builddir)/$(ISO_INSTALL)
 	rm -f $(builddir)/rootfs.img
 	rm -f $(builddir)/installer
-	rm -f $(builddir)/installer-*.o
+	rm -f $(builddir)/c9o-init
 
 # Test ISO in QEMU (runs validation script)
 iso-test:

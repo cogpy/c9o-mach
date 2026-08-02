@@ -10,14 +10,35 @@
 
 #include "installer.h"
 
-#include <mach.h>
-#include <device/device.h>
+#include <device/device_types.h>
 
 /* Device master port for disk access */
 static mach_port_t device_master = MACH_PORT_NULL;
 
 /* List of discovered disks */
 static disk_info_t *disk_list = NULL;
+
+/* Descriptor pools, the installer runs without a heap */
+static disk_info_t disk_pool[INSTALLER_MAX_DISKS];
+static int disk_pool_used = 0;
+static partition_info_t partition_pool[INSTALLER_MAX_PARTITIONS];
+static int partition_pool_used = 0;
+
+static disk_info_t *disk_alloc(void)
+{
+    if (disk_pool_used >= INSTALLER_MAX_DISKS)
+        return NULL;
+    
+    return &disk_pool[disk_pool_used++];
+}
+
+static partition_info_t *partition_alloc(void)
+{
+    if (partition_pool_used >= INSTALLER_MAX_PARTITIONS)
+        return NULL;
+    
+    return &partition_pool[partition_pool_used++];
+}
 
 /*
  * Known device prefixes for disk enumeration
@@ -36,14 +57,13 @@ static const char *disk_prefixes[] = {
  */
 int disk_init(void)
 {
-    kern_return_t kr;
-    
     installer_log(LOG_INFO, "Initializing disk subsystem...");
     
-    /* Get device master port */
-    kr = device_get_privileged_port(device_priv(), &device_master);
-    if (kr != KERN_SUCCESS) {
-        installer_log(LOG_ERROR, "Failed to get device master port: %d", kr);
+    /* The device master port is handed to the bootstrap task by the
+       kernel boot script, see tests/testlib.c.  */
+    device_master = device_priv();
+    if (device_master == MACH_PORT_NULL) {
+        installer_log(LOG_ERROR, "No device master port available");
         return -1;
     }
     
@@ -61,10 +81,7 @@ void disk_cleanup(void)
         disk_list = NULL;
     }
     
-    if (device_master != MACH_PORT_NULL) {
-        mach_port_deallocate(mach_task_self(), device_master);
-        device_master = MACH_PORT_NULL;
-    }
+    device_master = MACH_PORT_NULL;
 }
 
 /*
@@ -84,7 +101,7 @@ static disk_info_t *probe_disk_device(const char *device_name)
     }
     
     /* Allocate disk info structure */
-    disk_info_t *disk = (disk_info_t *)kalloc(sizeof(disk_info_t));
+    disk_info_t *disk = disk_alloc();
     if (disk == NULL) {
         device_close(device_port);
         return NULL;
@@ -149,6 +166,11 @@ disk_info_t *disk_enumerate(void)
     
     installer_log(LOG_INFO, "Enumerating disk devices...");
     
+    /* Any previously returned list becomes invalid */
+    disk_list = NULL;
+    disk_pool_used = 0;
+    memset(disk_pool, 0, sizeof(disk_pool));
+    
     /* Try each prefix with numbers 0-7 */
     for (i = 0; disk_prefixes[i] != NULL; i++) {
         for (j = 0; j < 8; j++) {
@@ -170,9 +192,6 @@ disk_info_t *disk_enumerate(void)
     }
     
     /* Cache the list */
-    if (disk_list != NULL) {
-        disk_free_list(disk_list);
-    }
     disk_list = head;
     
     /* Count disks found */
@@ -190,11 +209,13 @@ disk_info_t *disk_enumerate(void)
  */
 void disk_free_list(disk_info_t *list)
 {
-    while (list != NULL) {
-        disk_info_t *next = list->next;
-        kfree((vm_offset_t)list, sizeof(disk_info_t));
-        list = next;
-    }
+    if (list == NULL)
+        return;
+    
+    /* The descriptors come from a pool that is only reset as a whole,
+       so this must only be called for a complete list.  */
+    disk_pool_used = 0;
+    memset(disk_pool, 0, sizeof(disk_pool));
 }
 
 /*
@@ -210,6 +231,10 @@ partition_info_t *disk_get_partitions(disk_info_t *disk)
     
     if (disk == NULL)
         return NULL;
+    
+    /* Any previously returned partition list becomes invalid */
+    partition_pool_used = 0;
+    memset(partition_pool, 0, sizeof(partition_pool));
     
     /* Open disk device */
     kr = device_open(device_master, D_READ, disk->device_name, &device_port);
@@ -251,7 +276,7 @@ partition_info_t *disk_get_partitions(disk_info_t *disk)
         if (type == PART_TYPE_EMPTY)
             continue;
         
-        partition_info_t *part = (partition_info_t *)kalloc(sizeof(partition_info_t));
+        partition_info_t *part = partition_alloc();
         if (part == NULL)
             continue;
         memset(part, 0, sizeof(partition_info_t));
@@ -319,11 +344,11 @@ partition_info_t *disk_get_partitions(disk_info_t *disk)
  */
 void partition_free_list(partition_info_t *list)
 {
-    while (list != NULL) {
-        partition_info_t *next = list->next;
-        kfree((vm_offset_t)list, sizeof(partition_info_t));
-        list = next;
-    }
+    if (list == NULL)
+        return;
+    
+    partition_pool_used = 0;
+    memset(partition_pool, 0, sizeof(partition_pool));
 }
 
 /*

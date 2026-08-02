@@ -7,57 +7,58 @@
 # under the terms of the GNU General Public License as published by
 # the Free Software Foundation; either version 2 of the License, or
 # (at your option) any later version.
+#
+# The `module' lines are boot script commands rather than plain file
+# names: GNU Mach hands everything following the file name to the task
+# it creates from the module, see kern/bootstrap.c.  A line whose first
+# word starts with `#' is a comment for the boot script parser, which is
+# how data modules such as the root file system image are loaded without
+# being executed.
 
-set timeout=10
+set timeout=5
 set default=0
 
 # Colors and appearance
 set menu_color_normal=white/black
 set menu_color_highlight=black/light-gray
 
-# Terminal settings
-terminal_output console
-terminal_input console
+# Terminal settings, com0 is also the console used by the kernel
+serial --unit=0 --speed=115200
+terminal_output console serial
+terminal_input console serial
 
 menuentry "c9o-mach Live (RAM-based system)" {
     echo "Loading GNU Mach microkernel..."
-    multiboot /boot/gnumach console=com0 live root=ramdisk
-    echo "Loading root filesystem..."
-    module /boot/modules/rootfs.img rootfs
+    multiboot /boot/gnumach console=com0 live
+    echo "Loading init..."
+    module /boot/init init '${host-port}' '${device-port}' '${kernel-command-line}' '$(task-create)' '$(task-resume)'
+    echo "Loading root file system..."
+    module /boot/modules/rootfs.img '#rootfs'
     boot
 }
 
 menuentry "c9o-mach Live (with verbose logging)" {
     echo "Loading GNU Mach microkernel with verbose logging..."
-    multiboot /boot/gnumach console=com0 live root=ramdisk verbose console_timestamps=on
-    module /boot/modules/rootfs.img rootfs
+    multiboot /boot/gnumach console=com0 live verbose console_timestamps=on
+    module /boot/init init '${host-port}' '${device-port}' '${kernel-command-line}' '$(task-create)' '$(task-resume)'
+    module /boot/modules/rootfs.img '#rootfs'
     boot
 }
 
 menuentry "c9o-mach Debug Mode (KDB enabled)" {
     echo "Loading GNU Mach with kernel debugger..."
-    multiboot /boot/gnumach console=com0 live root=ramdisk debug kdb console_timestamps=on timestamp_format=precise
-    module /boot/modules/rootfs.img rootfs
+    multiboot /boot/gnumach console=com0 live -d console_timestamps=on timestamp_format=precise
+    module /boot/init init '${host-port}' '${device-port}' '${kernel-command-line}' '$(task-create)' '$(task-resume)'
+    module /boot/modules/rootfs.img '#rootfs'
     boot
 }
 
 menuentry "c9o-mach Rescue Mode (minimal environment)" {
     echo "Loading GNU Mach rescue environment..."
-    multiboot /boot/gnumach console=com0 rescue root=ramdisk single
-    module /boot/modules/rootfs.img rootfs
+    multiboot /boot/gnumach console=com0 rescue single
+    module /boot/init init '${host-port}' '${device-port}' '${kernel-command-line}' '$(task-create)' '$(task-resume)'
+    module /boot/modules/rootfs.img '#rootfs'
     boot
-}
-
-menuentry "Hardware Detection Mode" {
-    echo "Loading GNU Mach with hardware detection..."
-    multiboot /boot/gnumach console=com0 live root=ramdisk hwdetect verbose
-    module /boot/modules/rootfs.img rootfs
-    boot
-}
-
-menuentry "Memory Test (memtest86+)" {
-    echo "Loading memory test..."
-    linux16 /boot/memtest86+.bin
 }
 
 menuentry "Reboot" {

@@ -8,7 +8,7 @@ set -euo pipefail
 
 # Script location
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TOP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+TOP_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Default configuration
 ROOTFS_SIZE="${ROOTFS_SIZE:-32}"  # Size in MB
@@ -189,15 +189,7 @@ EOF
 
 # Create the rootfs image file
 create_image() {
-    log_info "Creating rootfs image: $OUTPUT_FILE (${ROOTFS_SIZE}MB)"
-    
-    # Create empty image
-    dd if=/dev/zero of="$BUILD_DIR/$OUTPUT_FILE" bs=1M count="$ROOTFS_SIZE" status=none
-    
-    log_info "Rootfs image created: $BUILD_DIR/$OUTPUT_FILE"
-    
-    # Pack the rootfs directory into a cpio archive within the image
-    log_info "Packing rootfs contents..."
+    log_info "Packing rootfs contents into $IMAGE_FILE"
     
     local rootfs_dir="$BUILD_DIR/rootfs"
     
@@ -208,15 +200,16 @@ create_image() {
         # If gzip is available, compress it
         if command -v gzip &>/dev/null; then
             gzip -f "$BUILD_DIR/rootfs.cpio"
-            mv "$BUILD_DIR/rootfs.cpio.gz" "$BUILD_DIR/$OUTPUT_FILE"
+            mv "$BUILD_DIR/rootfs.cpio.gz" "$IMAGE_FILE"
             log_info "Created compressed cpio rootfs"
         else
-            mv "$BUILD_DIR/rootfs.cpio" "$BUILD_DIR/$OUTPUT_FILE"
+            mv "$BUILD_DIR/rootfs.cpio" "$IMAGE_FILE"
             log_info "Created cpio rootfs (uncompressed)"
         fi
     else
-        # Fallback: just create empty placeholder
+        # Fallback: an empty image of the requested size
         log_warn "cpio not available, creating placeholder image"
+        dd if=/dev/zero of="$IMAGE_FILE" bs=1M count="$ROOTFS_SIZE" status=none
     fi
 }
 
@@ -233,6 +226,14 @@ main() {
     # Clean and create build directory
     rm -rf "$BUILD_DIR"
     mkdir -p "$BUILD_DIR"
+    
+    # The image is built inside the build directory and copied to the
+    # requested output afterwards, which may be an absolute path
+    IMAGE_FILE="$BUILD_DIR/rootfs.img"
+    case "$OUTPUT_FILE" in
+        /*) OUTPUT_PATH="$OUTPUT_FILE" ;;
+        *) OUTPUT_PATH="$PWD/$OUTPUT_FILE" ;;
+    esac
     
     # Create rootfs based on type
     case "$ROOTFS_TYPE" in
@@ -252,12 +253,12 @@ main() {
     create_image
     
     # Copy to final location if different
-    if [[ "$BUILD_DIR/$OUTPUT_FILE" != "$OUTPUT_FILE" ]]; then
-        cp "$BUILD_DIR/$OUTPUT_FILE" "$OUTPUT_FILE"
+    if [[ "$IMAGE_FILE" != "$OUTPUT_PATH" ]]; then
+        cp "$IMAGE_FILE" "$OUTPUT_PATH"
     fi
     
-    log_info "Rootfs image build complete: $OUTPUT_FILE"
-    ls -lh "$OUTPUT_FILE"
+    log_info "Rootfs image build complete: $OUTPUT_PATH"
+    ls -lh "$OUTPUT_PATH"
 }
 
 main "$@"
