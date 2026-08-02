@@ -521,13 +521,6 @@ jobs:
       fail-fast: false
       matrix:
         arch: [i686, x86_64]
-        include:
-          - arch: i686
-            configure_flags: "--host=i686-gnu CC='gcc -m32' LD='ld -melf_i386' --enable-live-iso --enable-installer --enable-install-iso"
-            qemu_system: qemu-system-i386
-          - arch: x86_64
-            configure_flags: "--host=x86_64-gnu --enable-pae --enable-user32 --enable-live-iso --enable-installer --enable-install-iso"
-            qemu_system: qemu-system-x86_64
     
     steps:
     - name: Checkout code
@@ -543,53 +536,34 @@ jobs:
           mtools qemu-system-x86 texinfo \
           e2fsprogs dosfstools ovmf
           
-    # Install MIG
-    - name: Setup MIG
-      run: |
-        if ! command -v mig >/dev/null 2>&1; then
-          if [ -d "mig" ]; then
-            cd mig
-            [ -f configure ] || autoreconf --install
-            [ -f Makefile ] || ./configure
-            make -j$(nproc)
-            sudo make install
-            cd ..
-          fi
-        fi
-        
-    - name: Configure for ISO build
-      run: |
-        autoreconf --install
-        eval ./configure ${{ matrix.configure_flags }}
-        
+    # ci-build.sh builds MIG with the target ABI, which the kernel and the
+    # bootstrap tasks on the media both depend on
     - name: Build kernel
+      env:
+        EXTRA_CONFIGURE_FLAGS: "--enable-live-iso --enable-installer --enable-install-iso"
       run: |
-        make -j$(nproc) gnumach
+        ./scripts/ci-build.sh ${{ matrix.arch }}
         
-    - name: Build Live ISO
+    - name: Build ISOs
+      working-directory: build-${{ matrix.arch }}
       run: |
-        make iso-live || echo "ISO build attempted"
-        
-    - name: Build Install ISO
-      run: |
-        make iso-install || echo "Install ISO build attempted"
+        make iso-live
+        make iso-install
         
     - name: Validate ISOs
       run: |
-        if ls *.iso 1>/dev/null 2>&1; then
-          for iso in *.iso; do
-            echo "Validating $iso..."
-            file "$iso"
-            ls -lh "$iso"
-          done
-        fi
+        for iso in build-${{ matrix.arch }}/*.iso; do
+          ./scripts/validate-iso.sh "$iso"
+        done
         
-    - name: Upload Live ISO
+    - name: Upload ISOs
       uses: actions/upload-artifact@v4
       if: success()
       with:
-        name: iso-live-${{ matrix.arch }}
-        path: "*.iso"
+        name: iso-${{ matrix.arch }}
+        path: |
+          build-${{ matrix.arch }}/*.iso
+          build-${{ matrix.arch }}/*.iso.sha256
         retention-days: 30
         if-no-files-found: warn
         
@@ -621,16 +595,11 @@ jobs:
         if ls isos/*.iso 1>/dev/null 2>&1; then
           for iso in isos/*.iso; do
             echo "Testing BIOS boot for $iso..."
-            timeout 120 qemu-system-i386 \
-              -m 512 \
-              -cdrom "$iso" \
-              -boot d \
-              -serial stdio \
-              -display none \
-              -no-reboot || echo "Boot test completed/timed out for $iso"
+            ./scripts/validate-iso.sh --boot-test --timeout 120 "$iso"
           done
         else
           echo "No ISOs found to test"
+          exit 1
         fi
         
   # Performance monitoring (basic)

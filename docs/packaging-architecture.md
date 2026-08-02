@@ -21,18 +21,18 @@ graph TD
 
 ## Directory Structure
 
+The build rules live in the top level `Makefile.am`, following the
+non-recursive layout used by the rest of the tree.
+
 ```
 packaging/
 ├── iso/
-│   ├── Makefile.am              # ISO build rules
 │   ├── build-iso.sh             # ISO creation script
 │   ├── grub.cfg.live.template   # GRUB config for live boot
 │   └── grub.cfg.install.template # GRUB config for installer
 ├── rootfs/
-│   ├── minimal/                 # Minimal root filesystem
-│   └── full/                    # Full distribution rootfs
+│   └── build-rootfs.sh          # Root filesystem image builder
 └── installer/
-    ├── Makefile.am              # Installer build rules
     ├── installer.h              # Installer header
     ├── main.c                   # Installer entry point
     ├── disk.c                   # Disk operations
@@ -60,6 +60,7 @@ ISO Root/
 │   │   ├── fonts/              # GRUB fonts
 │   │   └── i386-pc/            # GRUB modules (BIOS)
 │   ├── gnumach                 # The kernel
+│   ├── init                    # Bootstrap task (built as c9o-init)
 │   └── modules/
 │       ├── rootfs.img          # Root filesystem image
 │       └── installer           # Installer binary (install ISO only)
@@ -82,12 +83,54 @@ sequenceDiagram
     BIOS/UEFI->>GRUB: Load bootloader
     GRUB->>GRUB: Parse grub.cfg
     GRUB->>Kernel: Load gnumach (multiboot)
-    GRUB->>Kernel: Load modules (rootfs, installer)
+    GRUB->>Kernel: Load modules (init or installer, rootfs)
     Kernel->>Kernel: Initialize hardware
-    Kernel->>Init: Start bootstrap task
+    Kernel->>Kernel: Parse boot mode (kern/boot_params.c)
+    Kernel->>Init: Run the boot script, start bootstrap task
     Init->>Init: Parse boot mode
     Init->>Services: Start essential services
     Services->>Services: Console, disk, etc.
+```
+
+### Boot Parameters
+
+The kernel command line selects the environment to boot.  The parsing
+helpers in `kern/boot_params.[ch]` are shared by the kernel, `init` and
+the installer, so all three agree on what a parameter means:
+
+| Parameter | Meaning |
+|-----------|---------|
+| `live` | Live environment, run from RAM |
+| `install` | Installation environment |
+| `rescue` | Minimal rescue environment |
+| `single`, `-s` | Single user mode |
+| `target=DEVICE` | Installation target device |
+| `unattended` | Allow the installer to write to the target disk |
+
+`install` takes precedence over `rescue`, which takes precedence over
+`live`.  The kernel reports the result early in the boot log:
+
+```
+[0.000] boot mode: live
+```
+
+### Module Lines Are Boot Script Commands
+
+GNU Mach does not treat multiboot modules as plain files: every module
+string is a line of the boot script, where the first word names the
+program and the rest becomes its argument vector, see `kern/bootstrap.c`
+and `kern/boot_script.c`.  A GRUB menu entry therefore starts `init`
+with the ports and the command line it needs:
+
+```
+module /boot/init init '${host-port}' '${device-port}' '${kernel-command-line}' '$(task-create)' '$(task-resume)'
+```
+
+Data modules must not be executed, so they are declared as a boot script
+comment:
+
+```
+module /boot/modules/rootfs.img '#rootfs'
 ```
 
 ## Build System Integration
@@ -120,22 +163,25 @@ AC_ARG_WITH([rootfs],
 iso:                 # Default ISO (same as iso-live)
 iso-live:            # Live boot ISO
 iso-install:         # Installation ISO
-iso-live-i686:       # Live ISO for i686
-iso-live-x86_64:     # Live ISO for x86_64
-iso-install-i686:    # Install ISO for i686
-iso-install-x86_64:  # Install ISO for x86_64
 iso-full:            # Both live and install
-iso-all:             # All ISOs for all architectures
+iso-all:             # All configured ISOs
+iso-clean:           # Remove ISO build artifacts
 
 # Component targets
+c9o-init:            # Build the init bootstrap task
 installer:           # Build installer binary
 rootfs.img:          # Build rootfs image
 
 # Testing targets
-iso-test:            # Test ISO in QEMU (BIOS)
-iso-test-efi:        # Test ISO in QEMU (UEFI)
-install-test:        # Test installation process
+iso-validate:        # Check ISO structure without booting
+iso-test:            # Boot the ISO in QEMU and wait for the ready marker
+iso-live-test:       # Build and boot test the live ISO
+iso-install-test:    # Build and boot test the install ISO
 ```
+
+The ISOs are named `c9o-mach-<type>-<arch>.iso`, for instance
+`c9o-mach-live-i686.iso`, and are written next to the kernel in the build
+directory together with a `.sha256` file.
 
 ## Installer Architecture
 
@@ -259,19 +305,36 @@ scripts/validate-iso.sh --boot-test c9o-mach-live-i686.iso
 scripts/validate-iso.sh --boot-test --efi c9o-mach-live-x86_64.iso
 ```
 
+The boot test is deterministic: it waits for the readiness marker printed
+by the bootstrap task (`c9o-mach-init-ready` or
+`c9o-mach-installer-ready`), and fails on a kernel panic or when the
+marker does not appear before the timeout.
+
 ### CI/CD Integration
 
 ```yaml
 # GitHub Actions workflow addition
+- name: Build kernel
+  env:
+    EXTRA_CONFIGURE_FLAGS: "--enable-live-iso --enable-installer --enable-install-iso"
+  run: ./scripts/ci-build.sh i686
+
 - name: Build ISOs
+  working-directory: build-i686
   run: |
     make iso-live
     make iso-install
 
 - name: Test ISOs
   run: |
-    scripts/validate-iso.sh --boot-test *.iso
+    for iso in build-i686/*.iso; do
+      scripts/validate-iso.sh --boot-test "$iso"
+    done
 ```
+
+`scripts/ci-build.sh` is used instead of a plain `./configure` because it
+also builds MIG with the ABI of the target, which both the kernel and the
+bootstrap tasks on the media depend on.
 
 ## Extending the System
 
@@ -316,17 +379,21 @@ scripts/validate-iso.sh --boot-test --efi c9o-mach-live-x86_64.iso
 
 ### Custom ISO Configurations
 
-Create a custom GRUB template:
+The GRUB templates are copied to the ISO as they are, so a custom
+configuration is a matter of editing them and rebuilding:
 
 ```bash
-cp packaging/iso/grub.cfg.live.template packaging/iso/grub.cfg.custom.template
-# Edit as needed
+$EDITOR packaging/iso/grub.cfg.live.template
+make iso-live
 ```
 
-Build with custom config:
+`packaging/iso/build-iso.sh` can also be run directly, for instance to
+assemble an ISO from binaries that were built elsewhere:
 
 ```bash
-GRUB_CFG=grub.cfg.custom.template make iso-live
+packaging/iso/build-iso.sh --type live --arch i686 \
+    --kernel build-i686/gnumach --init build-i686/c9o-init \
+    --rootfs build-i686/rootfs.img --output .
 ```
 
 ## Future Enhancements

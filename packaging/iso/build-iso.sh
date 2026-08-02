@@ -233,9 +233,10 @@ build_iso() {
         local iso_size=$(du -h "$iso_output" | cut -f1)
         log_success "ISO created: $iso_output ($iso_size)"
         
-        # Generate checksum
+        # Generate checksum, recorded under the plain ISO name so that it
+        # can be verified from the directory holding the image
         if command -v sha256sum &>/dev/null; then
-            sha256sum "$iso_output" > "$iso_output.sha256"
+            (cd "$OUTPUT_DIR" && sha256sum "$iso_name" > "$iso_name.sha256")
             log_info "Checksum: $iso_output.sha256"
         fi
     else
