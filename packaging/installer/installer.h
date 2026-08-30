@@ -173,7 +173,7 @@ const char *get_install_error_msg(int error_code);
 int ui_init(void);
 void ui_cleanup(void);
 int ui_show_welcome(void);
-int ui_disk_selection(disk_info_t **selected_disk);
+int ui_disk_selection(disk_info_t **selected_disk, const char *target_device);
 int ui_partition_config(disk_info_t *disk, partition_config_t *config);
 int ui_show_confirmation(installer_state_t *state);
 int ui_show_progress(const char *message, int percent);

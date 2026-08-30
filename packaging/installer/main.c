@@ -108,7 +108,7 @@ static int installer_run(void)
     
     /* Disk selection */
     disk_info_t *selected_disk = NULL;
-    result = ui_disk_selection(&selected_disk);
+    result = ui_disk_selection(&selected_disk, target_device);
     if (result != UI_RESULT_NEXT || selected_disk == NULL) {
         return INSTALL_CANCELLED;
     }

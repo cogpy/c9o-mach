@@ -47,7 +47,7 @@ menuentry "Install c9o-mach (Expert Mode)" {
 
 menuentry "Install c9o-mach (with Debug Output)" {
     echo "Starting c9o-mach installation with debug output..."
-    multiboot /boot/gnumach console=com0 install console_timestamps=on
+    multiboot /boot/gnumach console=com0 install debug console_timestamps=on
     module /boot/modules/installer installer '${host-port}' '${device-port}' '${kernel-command-line}' '$(task-create)' '$(task-resume)'
     module /boot/modules/rootfs.img '#rootfs'
     boot

@@ -171,7 +171,7 @@ int ui_show_welcome(void)
 /*
  * Show disk selection screen
  */
-int ui_disk_selection(disk_info_t **selected_disk)
+int ui_disk_selection(disk_info_t **selected_disk, const char *target_device)
 {
     disk_info_t *disks;
     int disk_count = 0;
@@ -214,8 +214,31 @@ int ui_disk_selection(disk_info_t **selected_disk)
         return UI_RESULT_ERROR;
     }
     
-    /* For now, auto-select first disk */
-    *selected_disk = disks;
+    /* Honor target= when it names one of the enumerated disks. */
+    if (target_device != NULL && target_device[0] != '\0') {
+        disk_info_t *match = NULL;
+
+        for (disk_info_t *d = disks; d != NULL; d = d->next) {
+            if (strcmp(d->device_name, target_device) == 0) {
+                match = d;
+                break;
+            }
+        }
+
+        if (match == NULL) {
+            printf(ANSI_RED "Requested target disk %s was not found." ANSI_RESET "\n",
+                   target_device);
+            installer_log(LOG_ERROR, "Target device %s not found", target_device);
+            disk_free_list(disks);
+            ui_wait_for_enter();
+            return UI_RESULT_ERROR;
+        }
+
+        *selected_disk = match;
+    } else {
+        /* No target= given, auto-select the first enumerated disk */
+        *selected_disk = disks;
+    }
     
     printf("Selected disk: %s (%s)\n", 
            (*selected_disk)->device_name, (*selected_disk)->model);
