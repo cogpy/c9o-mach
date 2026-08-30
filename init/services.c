@@ -12,13 +12,8 @@
 
 #include <stdarg.h>
 
-/* External printf function */
-extern int printf(const char *fmt, ...);
-extern void *kalloc(size_t size);
-extern void kfree(void *ptr, size_t size);
-
-/* Service list head */
-static service_t *service_list = NULL;
+/* Init runs without a heap, so services live in a fixed size table.  */
+static service_t service_table[INIT_MAX_SERVICES];
 static int service_count = 0;
 
 /*
@@ -46,13 +41,7 @@ int services_init(void)
  */
 void services_cleanup(void)
 {
-    service_t *s = service_list;
-    while (s != NULL) {
-        service_t *next = s->next;
-        kfree(s, sizeof(service_t));
-        s = next;
-    }
-    service_list = NULL;
+    memset(service_table, 0, sizeof(service_table));
     service_count = 0;
 }
 
@@ -70,13 +59,20 @@ int service_register(const char *name, const char *command, service_type_t type)
         return -1;
     }
     
-    /* Allocate new service */
-    service_t *s = (service_t *)kalloc(sizeof(service_t));
+    /* Take a free slot in the service table */
+    service_t *s = NULL;
+    for (int i = 0; i < INIT_MAX_SERVICES; i++) {
+        if (!service_table[i].used) {
+            s = &service_table[i];
+            break;
+        }
+    }
     if (s == NULL) {
-        init_log(LOG_ERROR, "Failed to allocate service structure");
+        init_log(LOG_ERROR, "No free service slot for '%s'", name);
         return -1;
     }
     memset(s, 0, sizeof(service_t));
+    s->used = 1;
     
     /* Fill in service info */
     strncpy(s->name, name, sizeof(s->name) - 1);
@@ -87,9 +83,6 @@ int service_register(const char *name, const char *command, service_type_t type)
     s->priority = service_count;  /* Lower number = earlier start */
     s->task_port = MACH_PORT_NULL;
     
-    /* Add to list */
-    s->next = service_list;
-    service_list = s;
     service_count++;
     
     init_log(LOG_DEBUG, "Registered service: %s", name);
@@ -101,34 +94,21 @@ int service_register(const char *name, const char *command, service_type_t type)
  */
 int service_unregister(const char *name)
 {
-    service_t *prev = NULL;
-    service_t *s = service_list;
+    service_t *s = service_find(name);
     
-    while (s != NULL) {
-        if (strcmp(s->name, name) == 0) {
-            /* Stop if running */
-            if (s->state == SERVICE_STATE_RUNNING) {
-                service_stop(name);
-            }
-            
-            /* Remove from list */
-            if (prev == NULL) {
-                service_list = s->next;
-            } else {
-                prev->next = s->next;
-            }
-            
-            kfree(s, sizeof(service_t));
-            service_count--;
-            
-            init_log(LOG_DEBUG, "Unregistered service: %s", name);
-            return 0;
-        }
-        prev = s;
-        s = s->next;
+    if (s == NULL)
+        return -1;  /* Not found */
+    
+    /* Stop if running */
+    if (s->state == SERVICE_STATE_RUNNING) {
+        service_stop(name);
     }
     
-    return -1;  /* Not found */
+    memset(s, 0, sizeof(service_t));
+    service_count--;
+    
+    init_log(LOG_DEBUG, "Unregistered service: %s", name);
+    return 0;
 }
 
 /*
@@ -136,8 +116,9 @@ int service_unregister(const char *name)
  */
 service_t *service_find(const char *name)
 {
-    for (service_t *s = service_list; s != NULL; s = s->next) {
-        if (strcmp(s->name, name) == 0) {
+    for (int i = 0; i < INIT_MAX_SERVICES; i++) {
+        service_t *s = &service_table[i];
+        if (s->used && strcmp(s->name, name) == 0) {
             return s;
         }
     }
@@ -249,8 +230,10 @@ void services_start_all(void)
     
     /* Simple priority-based start (lower priority = earlier) */
     for (int priority = 0; priority < service_count; priority++) {
-        for (service_t *s = service_list; s != NULL; s = s->next) {
-            if (s->priority == priority && s->state == SERVICE_STATE_STOPPED) {
+        for (int i = 0; i < INIT_MAX_SERVICES; i++) {
+            service_t *s = &service_table[i];
+            if (s->used && s->priority == priority
+                && s->state == SERVICE_STATE_STOPPED) {
                 service_start(s->name);
             }
         }
@@ -268,8 +251,10 @@ void services_stop_all(void)
     
     /* Stop in reverse priority order */
     for (int priority = service_count - 1; priority >= 0; priority--) {
-        for (service_t *s = service_list; s != NULL; s = s->next) {
-            if (s->priority == priority && s->state == SERVICE_STATE_RUNNING) {
+        for (int i = 0; i < INIT_MAX_SERVICES; i++) {
+            service_t *s = &service_table[i];
+            if (s->used && s->priority == priority
+                && s->state == SERVICE_STATE_RUNNING) {
                 service_stop(s->name);
             }
         }
@@ -289,8 +274,10 @@ void services_process_events(void)
      * 3. Process any pending service requests
      */
     
-    for (service_t *s = service_list; s != NULL; s = s->next) {
-        if (s->state == SERVICE_STATE_RUNNING && s->task_port != MACH_PORT_NULL) {
+    for (int i = 0; i < INIT_MAX_SERVICES; i++) {
+        service_t *s = &service_table[i];
+        if (s->used && s->state == SERVICE_STATE_RUNNING
+            && s->task_port != MACH_PORT_NULL) {
             /* Check if task still exists */
             /* If terminated and restart_on_failure, restart */
         }
@@ -305,9 +292,13 @@ void services_list(void)
     printf("%-20s %-15s %-10s\n", "NAME", "STATE", "TYPE");
     printf("%-20s %-15s %-10s\n", "----", "-----", "----");
     
-    for (service_t *s = service_list; s != NULL; s = s->next) {
+    for (int i = 0; i < INIT_MAX_SERVICES; i++) {
+        service_t *s = &service_table[i];
         const char *state_str;
         const char *type_str;
+        
+        if (!s->used)
+            continue;
         
         switch (s->state) {
             case SERVICE_STATE_STOPPED:  state_str = "stopped"; break;
@@ -356,8 +347,7 @@ void init_log(log_level_t level, const char *fmt, ...)
     }
     
     va_start(args, fmt);
-    /* In a real implementation, use vprintf */
-    printf("%s", fmt);
+    vprintf(fmt, args);
     va_end(args);
     
     printf("\n");

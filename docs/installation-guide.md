@@ -4,12 +4,29 @@ This guide walks you through installing c9o-mach (GNU Mach microkernel) on your 
 
 ## Table of Contents
 
-1. [System Requirements](#system-requirements)
-2. [Obtaining Installation Media](#obtaining-installation-media)
-3. [Booting the Installer](#booting-the-installer)
-4. [Installation Process](#installation-process)
-5. [Post-Installation](#post-installation)
-6. [Troubleshooting](#troubleshooting)
+1. [Current Status](#current-status)
+2. [System Requirements](#system-requirements)
+3. [Obtaining Installation Media](#obtaining-installation-media)
+4. [Booting the Installer](#booting-the-installer)
+5. [Installation Process](#installation-process)
+6. [Post-Installation](#post-installation)
+7. [Troubleshooting](#troubleshooting)
+
+## Current Status
+
+The media produced by `make iso-live` and `make iso-install` boot GNU Mach
+and start a bootstrap task from the GRUB menu entry:
+
+- the **live** and **rescue** entries start `init`, which reports the boot
+  mode, brings up its service table and prints `c9o-mach-init-ready`;
+- the **install** entries start the installer, which prints
+  `c9o-mach-installer-ready`, enumerates the disks and shows the planned
+  layout.
+
+The installer has no console input yet, so it stops before anything is
+written to a disk unless the boot command line contains `unattended`.
+Everything below describes the installation flow as it is being built;
+the steps that modify a disk only run in unattended mode.
 
 ## System Requirements
 
@@ -84,12 +101,19 @@ sync
 ### QEMU/Virtual Machine
 
 ```bash
-# BIOS mode
-qemu-system-i386 -m 512 -cdrom c9o-mach-install-i686.iso -boot d
+# BIOS mode, the kernel console is the first serial port
+qemu-system-i386 -m 512 -cdrom c9o-mach-install-i686.iso -boot d \
+    -display none -serial stdio
 
 # UEFI mode (requires OVMF)
 qemu-system-x86_64 -m 512 -cdrom c9o-mach-install-x86_64.iso \
-    -bios /usr/share/OVMF/OVMF_CODE.fd -boot d
+    -bios /usr/share/OVMF/OVMF_CODE.fd -boot d -display none -serial stdio
+```
+
+The same boot test is automated by:
+
+```bash
+scripts/validate-iso.sh --boot-test c9o-mach-install-i686.iso
 ```
 
 ## Installation Process
@@ -242,11 +266,29 @@ multiboot /boot/gnumach root=device:hd0s1 -s
 | Parameter | Description |
 |-----------|-------------|
 | `console=com0` | Use serial console |
+| `live` | Boot the live environment (RAM based) |
+| `install` | Boot the installation environment |
+| `rescue` | Boot the minimal rescue environment |
+| `target=DEVICE` | Installation target device, for instance `target=hd0` |
+| `unattended` | Allow the installer to write to the target disk |
+| `expert` | Installer expert mode |
 | `debug` | Enable debug output |
 | `verbose` | Verbose boot messages |
 | `console_timestamps=on` | Add timestamps to logs |
 | `single` or `-s` | Single user mode |
 | `root=device:hdXsY` | Specify root device |
+
+`live`, `install` and `rescue` select the boot mode, which the kernel
+reports early in the boot log as `boot mode: <mode>`; `install` takes
+precedence over `rescue`, which takes precedence over `live`.  The same
+parameters are parsed by `init` and by the installer, see
+`kern/boot_params.c`.
+
+An unattended installation therefore boots with:
+
+```
+multiboot /boot/gnumach console=com0 install unattended target=hd0
+```
 
 ### Manual Installation
 

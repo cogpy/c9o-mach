@@ -16,6 +16,8 @@ flowchart TD
 ## Modules
 - Loadable modules provide drivers and kernel extensions.
 - Configuration and compilation affect which drivers are in-kernel vs user-space.
+- A multiboot module string is a line of the boot script: the first word names the program to run and the rest becomes its argument vector.
+- A line whose first word starts with `#` is a comment, which is how data modules such as the root file system image on the c9o-mach install media are loaded without being executed, see `packaging-architecture.md`.
 
 ## Bootstrap
 - Bootstrap task receives privileged ports to locate/start core servers.

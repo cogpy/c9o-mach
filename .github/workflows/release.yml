@@ -48,11 +48,6 @@ jobs:
       fail-fast: false
       matrix:
         arch: [i686, x86_64]
-        include:
-          - arch: i686
-            configure_flags: "--host=i686-gnu CC='gcc -m32' LD='ld -melf_i386' --enable-live-iso --enable-installer --enable-install-iso"
-          - arch: x86_64
-            configure_flags: "--host=x86_64-gnu --enable-pae --enable-user32 --enable-live-iso --enable-installer --enable-install-iso"
     
     steps:
     - name: Checkout code
@@ -68,39 +63,24 @@ jobs:
           mtools qemu-system-x86 texinfo \
           e2fsprogs dosfstools
           
-    - name: Setup MIG
-      run: |
-        if ! command -v mig >/dev/null 2>&1; then
-          if [ -d "mig" ]; then
-            sudo mkdir -p /usr/include/mach
-            sudo cp -r include/mach/* /usr/include/mach/
-            sudo ln -sf "$(pwd)/i386/include/mach/i386" /usr/include/mach/machine
-            cd mig
-            [ -f configure ] || autoreconf --install
-            [ -f Makefile ] || ./configure CPPFLAGS="-I/usr/include"
-            make -j$(nproc)
-            sudo make install
-            cd ..
-          fi
-        fi
-        
+    # ci-build.sh stages the Mach headers and builds MIG with the target
+    # ABI before configuring the kernel
     - name: Build
+      env:
+        EXTRA_CONFIGURE_FLAGS: "--enable-live-iso --enable-installer --enable-install-iso"
       run: |
-        autoreconf --install
-        eval ./configure ${{ matrix.configure_flags }}
-        make -j$(nproc) gnumach
+        ./scripts/ci-build.sh ${{ matrix.arch }}
         
     - name: Build ISOs
+      working-directory: build-${{ matrix.arch }}
       run: |
-        make iso-live || true
-        make iso-install || true
+        make iso-live
+        make iso-install
         
-    - name: Create checksums
+    - name: Validate ISOs
       run: |
-        for iso in *.iso; do
-          if [ -f "$iso" ]; then
-            sha256sum "$iso" > "${iso}.sha256"
-          fi
+        for iso in build-${{ matrix.arch }}/*.iso; do
+          ./scripts/validate-iso.sh "$iso"
         done
         
     - name: Upload Release Assets
@@ -109,6 +89,6 @@ jobs:
       with:
         tag_name: ${{ needs.release-please.outputs.tag_name }}
         files: |
-          *.iso
-          *.sha256
+          build-${{ matrix.arch }}/*.iso
+          build-${{ matrix.arch }}/*.iso.sha256
         fail_on_unmatched_files: false

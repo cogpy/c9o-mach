@@ -18,6 +18,7 @@ OUTPUT_DIR="${OUTPUT_DIR:-$PROJECT_ROOT}"
 ISO_TYPE="${ISO_TYPE:-live}"
 ARCH="${ARCH:-i686}"
 GNUMACH="${GNUMACH:-gnumach}"
+INIT="${INIT:-}"
 ROOTFS="${ROOTFS:-}"
 INSTALLER="${INSTALLER:-}"
 VERSION="${VERSION:-$(cat $PROJECT_ROOT/version.m4 2>/dev/null | grep -oP 'VERSION.*\[\K[^\]]+' || echo '0.0.0')}"
@@ -55,6 +56,7 @@ Options:
     -t, --type TYPE      ISO type: live, install, full (default: live)
     -a, --arch ARCH      Architecture: i686, x86_64 (default: i686)
     -k, --kernel FILE    Path to gnumach kernel binary
+    -n, --init FILE      Path to the init bootstrap task
     -r, --rootfs FILE    Path to rootfs image
     -i, --installer FILE Path to installer binary
     -o, --output DIR     Output directory (default: $PROJECT_ROOT)
@@ -75,10 +77,18 @@ EOF
 check_dependencies() {
     log_info "Checking dependencies..."
     local missing=()
+    local optional_missing=()
     
-    for cmd in grub-mkrescue xorriso mformat mkisofs; do
+    for cmd in grub-mkrescue xorriso; do
         if ! command -v "$cmd" &>/dev/null; then
             missing+=("$cmd")
+        fi
+    done
+    
+    # mformat is only needed for the optional EFI El Torito image
+    for cmd in mformat; do
+        if ! command -v "$cmd" &>/dev/null; then
+            optional_missing+=("$cmd")
         fi
     done
     
@@ -88,7 +98,11 @@ check_dependencies() {
         exit 1
     fi
     
-    log_success "All dependencies found"
+    if [ ${#optional_missing[@]} -gt 0 ]; then
+        log_warning "Missing optional dependencies: ${optional_missing[*]} (no EFI boot image)"
+    fi
+    
+    log_success "All required dependencies found"
 }
 
 prepare_iso_structure() {
@@ -108,6 +122,14 @@ prepare_iso_structure() {
     else
         log_error "Kernel not found: $GNUMACH"
         exit 1
+    fi
+    
+    # Copy the init bootstrap task
+    if [ -n "$INIT" ] && [ -f "$INIT" ]; then
+        cp "$INIT" "$iso_root/boot/init"
+        log_success "Init copied: $INIT"
+    else
+        log_warning "No init task provided - the kernel will boot without a bootstrap task"
     fi
     
     # Copy rootfs if provided
@@ -160,12 +182,17 @@ generate_grub_config() {
     else
         # Generate minimal grub.cfg
         cat > "$iso_root/boot/grub/grub.cfg" <<EOF
-set timeout=10
+set timeout=5
 set default=0
 
+serial --unit=0 --speed=115200
+terminal_input console serial
+terminal_output console serial
+
 menuentry "c9o-mach $ISO_TYPE" {
-    multiboot /boot/gnumach console=com0 $ISO_TYPE root=ramdisk
-    module /boot/modules/rootfs.img rootfs
+    multiboot /boot/gnumach console=com0 $ISO_TYPE
+    module /boot/init init '\${host-port}' '\${device-port}' '\${kernel-command-line}' '\$(task-create)' '\$(task-resume)'
+    module /boot/modules/rootfs.img '#rootfs'
     boot
 }
 EOF
@@ -175,7 +202,7 @@ EOF
 
 build_iso() {
     local iso_root="$BUILD_DIR/iso-$ISO_TYPE-$ARCH"
-    local iso_name="c9o-mach-${ISO_TYPE}-${ARCH}-${VERSION}.iso"
+    local iso_name="c9o-mach-${ISO_TYPE}-${ARCH}.iso"
     local iso_output="$OUTPUT_DIR/$iso_name"
     
     log_info "Building $ISO_TYPE ISO for $ARCH..."
@@ -206,9 +233,10 @@ build_iso() {
         local iso_size=$(du -h "$iso_output" | cut -f1)
         log_success "ISO created: $iso_output ($iso_size)"
         
-        # Generate checksum
+        # Generate checksum, recorded under the plain ISO name so that it
+        # can be verified from the directory holding the image
         if command -v sha256sum &>/dev/null; then
-            sha256sum "$iso_output" > "$iso_output.sha256"
+            (cd "$OUTPUT_DIR" && sha256sum "$iso_name" > "$iso_name.sha256")
             log_info "Checksum: $iso_output.sha256"
         fi
     else
@@ -242,6 +270,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -k|--kernel)
             GNUMACH="$2"
+            shift 2
+            ;;
+        -n|--init)
+            INIT="$2"
             shift 2
             ;;
         -r|--rootfs)

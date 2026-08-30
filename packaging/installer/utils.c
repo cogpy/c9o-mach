@@ -23,9 +23,6 @@ static const char *log_level_names[] = {
 /* Current log level (can be changed at runtime) */
 static log_level_t current_log_level = LOG_INFO;
 
-/* External printf function */
-extern int printf(const char *fmt, ...);
-
 /*
  * Set the minimum log level
  */
@@ -63,9 +60,7 @@ void installer_log(log_level_t level, const char *fmt, ...)
     
     /* Print the message */
     va_start(args, fmt);
-    /* In a real implementation, use vprintf */
-    /* For now, just print the format string */
-    printf("%s", fmt);
+    vprintf(fmt, args);
     va_end(args);
     
     printf("\n");
@@ -103,20 +98,47 @@ char *format_size(uint64_t bytes, char *buffer, size_t bufsize)
 {
     static const char *units[] = {"B", "KB", "MB", "GB", "TB"};
     int unit_index = 0;
-    double size = (double)bytes;
+    uint64_t size = bytes;
+    uint64_t remainder = 0;
     
-    while (size >= 1024.0 && unit_index < 4) {
-        size /= 1024.0;
+    /* No floating point is available in the bootstrap environment, so
+       the fractional digit is computed from the remainder.  */
+    while (size >= 1024 && unit_index < 4) {
+        remainder = size % 1024;
+        size /= 1024;
         unit_index++;
     }
     
-    if (unit_index == 0) {
-        snprintf(buffer, bufsize, "%llu %s", (unsigned long long)bytes, units[0]);
-    } else {
-        snprintf(buffer, bufsize, "%.1f %s", size, units[unit_index]);
-    }
+    if (unit_index == 0)
+        snprintf(buffer, bufsize, "%llu %s",
+                 (unsigned long long) size, units[unit_index]);
+    else
+        snprintf(buffer, bufsize, "%llu.%llu %s",
+                 (unsigned long long) size,
+                 (unsigned long long) (remainder * 10 / 1024),
+                 units[unit_index]);
     
     return buffer;
+}
+
+/*
+ * Parse an unsigned decimal number, returning a pointer to the first
+ * character that is not part of it.  The bootstrap environment has no
+ * C library, so this replaces strtoull().
+ */
+static uint64_t parse_u64(const char *str, const char **endptr)
+{
+    uint64_t value = 0;
+    
+    while (*str >= '0' && *str <= '9') {
+        value = value * 10 + (uint64_t) (*str - '0');
+        str++;
+    }
+    
+    if (endptr != NULL)
+        *endptr = str;
+    
+    return value;
 }
 
 /*
@@ -126,14 +148,14 @@ uint64_t parse_size(const char *str)
 {
     uint64_t value = 0;
     uint64_t multiplier = 1;
-    char *endptr;
+    const char *endptr;
     
     if (str == NULL || *str == '\0') {
         return 0;
     }
     
     /* Parse the numeric part */
-    value = strtoull(str, &endptr, 10);
+    value = parse_u64(str, &endptr);
     
     /* Check for size suffix */
     if (endptr != NULL && *endptr != '\0') {

@@ -27,9 +27,11 @@
 #define ANSI_WHITE      "\033[37m"
 #define ANSI_CLEAR      "\033[2J\033[H"
 
-/* Simple printf wrapper for console output */
-extern void cnputc(char c);
-extern int printf(const char *fmt, ...);
+/* Simple character output helper */
+static void ui_putc(char c)
+{
+    printf("%c", c);
+}
 
 /*
  * Clear the screen
@@ -45,9 +47,9 @@ static void ui_clear_screen(void)
 static void ui_print_line(void)
 {
     for (int i = 0; i < SCREEN_WIDTH; i++) {
-        cnputc('-');
+        ui_putc('-');
     }
-    cnputc('\n');
+    ui_putc('\n');
 }
 
 /*
@@ -59,7 +61,7 @@ static void ui_print_centered(const char *text)
     int padding = (SCREEN_WIDTH - len) / 2;
     
     for (int i = 0; i < padding; i++) {
-        cnputc(' ');
+        ui_putc(' ');
     }
     printf("%s\n", text);
 }
@@ -346,11 +348,11 @@ int ui_show_progress(const char *message, int percent)
         
         for (int i = 0; i < bar_width; i++) {
             if (i < filled) {
-                cnputc('=');
+                ui_putc('=');
             } else if (i == filled) {
-                cnputc('>');
+                ui_putc('>');
             } else {
-                cnputc(' ');
+                ui_putc(' ');
             }
         }
         

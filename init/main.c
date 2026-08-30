@@ -16,57 +16,23 @@
 
 #include "init.h"
 
-#include <mach.h>
-#include <mach/mach_port.h>
-#include <device/device.h>
-
 /* Global state */
 static init_state_t init_state;
-
-/* Boot mode detection strings */
-static const char *BOOT_MODE_LIVE = "live";
-static const char *BOOT_MODE_INSTALL = "install";
-static const char *BOOT_MODE_RESCUE = "rescue";
-static const char *BOOT_MODE_NORMAL = "normal";
-
-/*
- * Parse boot mode from kernel command line
- */
-static boot_mode_t parse_boot_mode(const char *cmdline)
-{
-    if (cmdline == NULL)
-        return BOOT_MODE_TYPE_NORMAL;
-    
-    if (strstr(cmdline, BOOT_MODE_INSTALL) != NULL)
-        return BOOT_MODE_TYPE_INSTALL;
-    
-    if (strstr(cmdline, BOOT_MODE_LIVE) != NULL)
-        return BOOT_MODE_TYPE_LIVE;
-    
-    if (strstr(cmdline, BOOT_MODE_RESCUE) != NULL)
-        return BOOT_MODE_TYPE_RESCUE;
-    
-    return BOOT_MODE_TYPE_NORMAL;
-}
 
 /*
  * Parse single-user mode flag
  */
 static int parse_single_user(const char *cmdline)
 {
-    if (cmdline == NULL)
-        return 0;
-    
-    if (strstr(cmdline, "single") != NULL || strstr(cmdline, "-s") != NULL)
-        return 1;
-    
-    return 0;
+    return boot_param_flag(cmdline, "single")
+        || boot_param_flag(cmdline, "-s");
 }
 
 /*
  * Initialize the init process
  */
-static int init_initialize(mach_port_t host_port, mach_port_t device_port)
+static int init_initialize(mach_port_t host_port, mach_port_t device_port,
+                           const char *cmdline)
 {
     init_log(LOG_INFO, "c9o-mach init starting...");
     init_log(LOG_INFO, "Version: %s", INIT_VERSION);
@@ -77,28 +43,13 @@ static int init_initialize(mach_port_t host_port, mach_port_t device_port)
     init_state.device_master_port = device_port;
     init_state.runlevel = RUNLEVEL_BOOT;
     
-    /* Parse boot parameters */
-    extern char *kernel_cmdline;
-    init_state.boot_mode = parse_boot_mode(kernel_cmdline);
-    init_state.single_user = parse_single_user(kernel_cmdline);
+    /* Parse boot parameters, using the same rules as the kernel */
+    init_state.cmdline = cmdline;
+    init_state.boot_mode = boot_param_mode(cmdline);
+    init_state.single_user = parse_single_user(cmdline);
     
-    /* Log boot mode */
-    const char *mode_str;
-    switch (init_state.boot_mode) {
-        case BOOT_MODE_TYPE_LIVE:
-            mode_str = "Live";
-            break;
-        case BOOT_MODE_TYPE_INSTALL:
-            mode_str = "Installation";
-            break;
-        case BOOT_MODE_TYPE_RESCUE:
-            mode_str = "Rescue";
-            break;
-        default:
-            mode_str = "Normal";
-            break;
-    }
-    init_log(LOG_INFO, "Boot mode: %s%s", mode_str, 
+    init_log(LOG_INFO, "Boot mode: %s%s",
+             boot_mode_string(init_state.boot_mode),
              init_state.single_user ? " (single user)" : "");
     
     /* Initialize service management */
@@ -158,7 +109,7 @@ static void handle_live_boot(void)
     /* Start live shell */
     init_log(LOG_INFO, "Starting live shell...");
     init_log(LOG_INFO, "Welcome to c9o-mach Live Environment");
-    init_log(LOG_INFO, "Type 'help' for available commands");
+    services_list();
 }
 
 /*
@@ -171,11 +122,17 @@ static void handle_install_boot(void)
     /* Start console service */
     service_start("console");
     
-    /* Start the installer */
-    init_log(LOG_INFO, "Launching installer...");
-    /* exec_installer() would be called here */
+    /* The installer is loaded as its own multiboot module and started by
+       the kernel boot script, see packaging/iso/grub.cfg.install.template.  */
+    init_log(LOG_INFO, "Installer task started from the boot script");
     
-    init_log(LOG_INFO, "Installer will guide you through the installation process");
+    {
+        char target[BOOT_PARAM_VALUE_MAX];
+        
+        if (boot_param_option(init_state.cmdline, "target",
+                              target, sizeof(target)))
+            init_log(LOG_INFO, "Requested installation target: %s", target);
+    }
 }
 
 /*
@@ -221,15 +178,15 @@ static void init_main_loop(void)
 {
     /* Handle boot mode */
     switch (init_state.boot_mode) {
-        case BOOT_MODE_TYPE_LIVE:
+        case BOOT_MODE_LIVE:
             handle_live_boot();
             break;
             
-        case BOOT_MODE_TYPE_INSTALL:
+        case BOOT_MODE_INSTALL:
             handle_install_boot();
             break;
             
-        case BOOT_MODE_TYPE_RESCUE:
+        case BOOT_MODE_RESCUE:
             handle_rescue_boot();
             break;
             
@@ -238,23 +195,20 @@ static void init_main_loop(void)
             break;
     }
     
+    /* Announce that the requested environment is up.  The ISO boot tests
+       wait for this line, see scripts/validate-iso.sh.  */
+    printf("%s: %s environment ready\n", INIT_READY_MARKER,
+           boot_mode_string(init_state.boot_mode));
+    
     /* Main event loop */
     init_log(LOG_INFO, "Init entering main loop");
     
     while (1) {
-        /* Wait for events:
-         * - Service termination
-         * - Shutdown requests
-         * - Signal handling (if applicable)
-         */
-        
         /* Process service events */
         services_process_events();
         
-        /* Small delay to prevent busy loop */
-        /* In real implementation, would use mach_msg with timeout */
-        for (volatile int i = 0; i < 1000000; i++)
-            ;
+        /* Wait for the next tick instead of spinning */
+        msleep(1000);
     }
 }
 
@@ -295,32 +249,34 @@ void init_shutdown(int reboot)
 }
 
 /*
- * Main entry point for init
- * Called by the kernel bootstrap mechanism with privileged ports
+ * Reboot the system
  */
-int main(int argc, char *argv[])
+void init_reboot(void)
 {
-    mach_port_t host_port = MACH_PORT_NULL;
-    mach_port_t device_port = MACH_PORT_NULL;
-    
-    /* Get privileged ports from bootstrap */
-    /* In Mach, these are typically passed as arguments or through
-     * the bootstrap port mechanism */
-    
-    if (argc >= 3) {
-        /* Parse port names from arguments */
-        host_port = (mach_port_t)atoi(argv[1]);
-        device_port = (mach_port_t)atoi(argv[2]);
-    } else {
-        /* Try to get ports through bootstrap */
-        extern mach_port_t host_priv(void);
-        extern mach_port_t device_priv(void);
-        host_port = host_priv();
-        device_port = device_priv();
-    }
+    init_shutdown(1);
+}
+
+/*
+ * Halt the system
+ */
+void init_halt(void)
+{
+    init_shutdown(0);
+}
+
+/*
+ * Main entry point for init
+ *
+ * The kernel boot script starts init with the host and device master
+ * ports (parsed by the startup code) followed by the kernel command
+ * line, see packaging/iso/grub.cfg.live.template.
+ */
+int main(int argc, char *argv[], int envc, char *envp[])
+{
+    const char *cmdline = argc > 3 ? argv[3] : "";
     
     /* Initialize */
-    if (init_initialize(host_port, device_port) != 0) {
+    if (init_initialize(host_priv(), device_priv(), cmdline) != 0) {
         init_log(LOG_ERROR, "Init initialization failed!");
         return 1;
     }

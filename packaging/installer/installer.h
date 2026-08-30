@@ -15,9 +15,25 @@
 #include <stddef.h>
 #include <string.h>
 
+#include <testlib.h>
+#include <kern/boot_params.h>
+
+#include <device.user.h>
+#include <mach.user.h>
+#include <mach_port.user.h>
+
 /* Version information */
 #define INSTALLER_VERSION "1.0.0"
 #define INSTALLER_NAME "c9o-mach Installer"
+
+/* Printed once the installer is up, and looked for by the ISO boot
+   tests, see scripts/validate-iso.sh.  */
+#define INSTALLER_READY_MARKER "c9o-mach-installer-ready"
+
+/* The installer runs as a bootstrap task without a heap, so the disk
+   and partition descriptors come from fixed size pools.  */
+#define INSTALLER_MAX_DISKS 8
+#define INSTALLER_MAX_PARTITIONS 32
 
 /* Installation result codes */
 #define INSTALL_SUCCESS     0
@@ -146,7 +162,9 @@ typedef struct {
 /*
  * Logging functions
  */
-void installer_log(log_level_t level, const char *fmt, ...);
+void installer_log(log_level_t level, const char *fmt, ...)
+    __attribute__ ((format (printf, 2, 3)));
+void installer_set_log_level(log_level_t level);
 const char *get_install_error_msg(int error_code);
 
 /*

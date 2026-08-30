@@ -136,6 +136,8 @@ libkernel_a_SOURCES += \
 	kern/ast.c \
 	kern/ast.h \
 	kern/atomic.h \
+	kern/boot_params.c \
+	kern/boot_params.h \
 	kern/boot_script.h \
 	kern/bootstrap.c \
 	kern/bootstrap.h \

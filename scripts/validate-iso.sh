@@ -88,9 +88,11 @@ check_iso_file() {
     fi
     test_pass "ISO file size: $size bytes"
     
-    # Check ISO magic number
-    local magic=$(xxd -l 5 -s 32769 "$iso" 2>/dev/null | awk '{print $2$3$4$5$6}')
-    if [[ "$magic" == "4344303031" ]]; then
+    # Check ISO magic number, "CD001" at the start of the primary volume
+    # descriptor (sector 16 plus one type byte)
+    local magic
+    magic=$(dd if="$iso" bs=1 skip=32769 count=5 2>/dev/null)
+    if [ "$magic" = "CD001" ]; then
         test_pass "Valid ISO 9660 signature found"
     else
         test_fail "Invalid ISO 9660 signature"
@@ -106,32 +108,46 @@ check_iso_contents() {
     
     log_info "Checking ISO contents..."
     
-    # Check for required files using isoinfo if available
+    # Check for required files, isoinfo comes with genisoimage and
+    # xorriso is already needed to build the ISO
+    local contents=""
     if command -v isoinfo &>/dev/null; then
-        local contents=$(isoinfo -l -i "$iso" 2>/dev/null || true)
-        
-        # Check for kernel
-        if echo "$contents" | grep -qi "gnumach"; then
-            test_pass "Kernel (gnumach) found in ISO"
-        else
-            test_fail "Kernel (gnumach) not found in ISO"
-        fi
-        
-        # Check for GRUB
-        if echo "$contents" | grep -qi "grub"; then
-            test_pass "GRUB bootloader found in ISO"
-        else
-            test_fail "GRUB bootloader not found in ISO"
-        fi
-        
-        # Check for grub.cfg
-        if echo "$contents" | grep -qi "grub.cfg"; then
-            test_pass "GRUB configuration found in ISO"
-        else
-            test_warning "GRUB configuration not found (may be embedded)"
-        fi
+        contents=$(isoinfo -l -i "$iso" 2>/dev/null || true)
+    elif command -v xorriso &>/dev/null; then
+        contents=$(xorriso -indev "$iso" -find / 2>/dev/null || true)
+    fi
+    
+    if [ -z "$contents" ]; then
+        test_skip "neither isoinfo nor xorriso available - cannot check contents"
+        return 0
+    fi
+    
+    # Check for kernel
+    if echo "$contents" | grep -qi "gnumach"; then
+        test_pass "Kernel (gnumach) found in ISO"
     else
-        test_skip "isoinfo not available - cannot check contents"
+        test_fail "Kernel (gnumach) not found in ISO"
+    fi
+    
+    # Check for the bootstrap task
+    if echo "$contents" | grep -qiE "(^|/)init|installer"; then
+        test_pass "Bootstrap task found in ISO"
+    else
+        test_fail "No bootstrap task (init or installer) found in ISO"
+    fi
+    
+    # Check for GRUB
+    if echo "$contents" | grep -qi "grub"; then
+        test_pass "GRUB bootloader found in ISO"
+    else
+        test_fail "GRUB bootloader not found in ISO"
+    fi
+    
+    # Check for grub.cfg
+    if echo "$contents" | grep -qi "grub.cfg"; then
+        test_pass "GRUB configuration found in ISO"
+    else
+        log_warning "GRUB configuration not found (may be embedded)"
     fi
 }
 
@@ -143,11 +159,13 @@ check_checksum() {
     log_info "Checking checksum..."
     
     if [ -f "$checksum_file" ]; then
-        if sha256sum -c "$checksum_file" &>/dev/null; then
+        # The checksum file records the name the ISO was built under, so
+        # it has to be checked from the directory holding the ISO
+        if (cd "$(dirname "$iso")" &&
+            sha256sum -c "$(basename "$checksum_file")") &>/dev/null; then
             test_pass "SHA256 checksum verified"
         else
             test_fail "SHA256 checksum mismatch"
-            return 1
         fi
     else
         test_skip "No checksum file found: $checksum_file"
@@ -157,17 +175,24 @@ check_checksum() {
 }
 
 # Run QEMU boot test
+#
+# The boot is driven to completion: the bootstrap task on the media
+# prints a marker once the requested environment is up, and the test
+# waits for it instead of guessing how long booting takes.
+BOOT_READY_MARKERS="c9o-mach-init-ready|c9o-mach-installer-ready"
+
 run_boot_test() {
     local iso="$1"
     local timeout="${2:-60}"
     local efi_mode="${3:-0}"
-    local log_file="/tmp/iso-boot-test-$$.log"
+    local log_file
+    log_file="$(mktemp -t iso-boot-test-XXXXXX.log)"
     
     log_info "Running boot test (timeout: ${timeout}s)..."
     
     # Determine QEMU binary and options
     local qemu_bin="qemu-system-i386"
-    local qemu_opts="-m 512 -nographic -no-reboot -boot d"
+    local qemu_opts="-m 512 -display none -no-reboot -boot d"
     
     # Check if x86_64 ISO
     if echo "$iso" | grep -q "x86_64"; then
@@ -186,6 +211,7 @@ run_boot_test() {
             log_info "Using UEFI firmware: $ovmf_path"
         else
             test_skip "OVMF not found - cannot test EFI boot"
+            rm -f "$log_file"
             return 0
         fi
     fi
@@ -193,51 +219,62 @@ run_boot_test() {
     # Check QEMU availability
     if ! command -v "$qemu_bin" &>/dev/null; then
         test_skip "QEMU not available: $qemu_bin"
+        rm -f "$log_file"
         return 0
     fi
     
-    # Run QEMU with timeout
+    # Run QEMU in the background, the console is the serial port
     log_info "Starting QEMU: $qemu_bin"
     
-    timeout --foreground "$timeout" \
-        $qemu_bin $qemu_opts -cdrom "$iso" 2>&1 | tee "$log_file" &
+    $qemu_bin $qemu_opts -cdrom "$iso" -serial "file:$log_file" \
+        >/dev/null 2>&1 &
     local qemu_pid=$!
     
-    # Wait and check output
-    sleep 5  # Give it time to start
-    
-    # Look for boot indicators
-    local boot_success=0
-    
-    # Check log for positive indicators
-    if grep -qi "GNU Mach" "$log_file" 2>/dev/null; then
-        boot_success=1
-    elif grep -qi "c9o-mach" "$log_file" 2>/dev/null; then
-        boot_success=1
-    elif grep -qi "Loading kernel" "$log_file" 2>/dev/null; then
-        boot_success=1
-    fi
-    
-    # Wait for QEMU to finish or timeout
-    wait $qemu_pid 2>/dev/null || true
-    
-    # Check for negative indicators
-    if grep -qi "error" "$log_file" 2>/dev/null; then
-        if grep -qi "fatal" "$log_file" 2>/dev/null; then
-            test_fail "Boot failed with fatal error"
-            [ -n "${VERBOSE:-}" ] && cat "$log_file"
-            rm -f "$log_file"
-            return 1
+    # Wait for a marker, a panic, or the timeout
+    local result="timeout"
+    local waited=0
+    while [ "$waited" -lt "$timeout" ]; do
+        if grep -Eq "$BOOT_READY_MARKERS" "$log_file" 2>/dev/null; then
+            result="ready"
+            break
         fi
-    fi
+        if grep -q "panic" "$log_file" 2>/dev/null; then
+            result="panic"
+            break
+        fi
+        if ! kill -0 "$qemu_pid" 2>/dev/null; then
+            result="exited"
+            break
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
     
-    # Evaluate result
-    if [ "$boot_success" = "1" ]; then
-        test_pass "Boot test succeeded - kernel loaded"
-    else
-        test_fail "Boot test failed - no kernel load detected"
-        [ -n "${VERBOSE:-}" ] && cat "$log_file"
-    fi
+    kill "$qemu_pid" 2>/dev/null || true
+    wait "$qemu_pid" 2>/dev/null || true
+    
+    case "$result" in
+        ready)
+            test_pass "Boot test succeeded - bootstrap task reported ready"
+            ;;
+        panic)
+            test_fail "Boot test failed - the kernel panicked"
+            grep -m1 "panic" "$log_file" || true
+            [ -n "${VERBOSE:-}" ] && cat "$log_file"
+            ;;
+        exited)
+            if grep -qi "GNU Mach" "$log_file" 2>/dev/null; then
+                test_fail "Boot test failed - the system stopped before reporting ready"
+            else
+                test_fail "Boot test failed - the kernel was not loaded"
+            fi
+            [ -n "${VERBOSE:-}" ] && cat "$log_file"
+            ;;
+        *)
+            test_fail "Boot test failed - no ready marker within ${timeout}s"
+            [ -n "${VERBOSE:-}" ] && cat "$log_file"
+            ;;
+    esac
     
     rm -f "$log_file"
     return 0

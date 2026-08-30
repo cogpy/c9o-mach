@@ -43,6 +43,11 @@ OPTIONS:
     --debug              Enable debug build
     --force-build        Continue building even if MIG assertions fail
 
+ENVIRONMENT:
+    EXTRA_CONFIGURE_FLAGS
+                         Additional flags appended to the configure command
+                         line, for instance --enable-live-iso
+
 EOF
 }
 
@@ -289,7 +294,7 @@ configure_build() {
     # --host=…-gnu.  i686 uses the installed 32-bit `mig`; x86_64 (user32)
     # needs the user-ABI `i686-gnu-mig`.  Do not append another USER_MIG
     # here: with duplicate VAR= configure arguments the last one wins.
-    eval "../configure $configure_flags MIG='mig' CFLAGS='$cflags'"
+    eval "../configure $configure_flags MIG='mig' CFLAGS='$cflags' ${EXTRA_CONFIGURE_FLAGS:-}"
     
     cd ..
 }

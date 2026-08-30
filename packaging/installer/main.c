@@ -10,20 +10,18 @@
 
 #include "installer.h"
 
-#include <mach.h>
-#include <mach/mach_port.h>
-#include <device/device.h>
-
 /* Global installer state */
 static installer_state_t installer_state;
 
 /* Boot parameters parsed from kernel command line */
 static int expert_mode = 0;
 static int debug_mode = 0;
-static char target_device[256] = "";
+static int unattended = 0;
+static char target_device[BOOT_PARAM_VALUE_MAX] = "";
 
 /*
- * Parse boot parameters for installer configuration
+ * Parse boot parameters for installer configuration.  The command line
+ * is parsed with the same helpers as the kernel, see kern/boot_params.c.
  */
 static void parse_boot_params(const char *cmdline)
 {
@@ -31,28 +29,29 @@ static void parse_boot_params(const char *cmdline)
         return;
     
     /* Check for expert mode */
-    if (strstr(cmdline, "expert") != NULL) {
+    if (boot_param_flag(cmdline, "expert")) {
         expert_mode = 1;
         installer_log(LOG_INFO, "Expert mode enabled");
     }
     
     /* Check for debug mode */
-    if (strstr(cmdline, "debug") != NULL) {
+    if (boot_param_flag(cmdline, "debug")) {
         debug_mode = 1;
+        installer_set_log_level(LOG_DEBUG);
         installer_log(LOG_INFO, "Debug mode enabled");
     }
     
-    /* Parse target device if specified */
-    const char *target = strstr(cmdline, "target=");
-    if (target != NULL) {
-        target += 7; /* Skip "target=" */
-        int i = 0;
-        while (*target && *target != ' ' && i < sizeof(target_device) - 1) {
-            target_device[i++] = *target++;
-        }
-        target_device[i] = '\0';
-        installer_log(LOG_INFO, "Target device: %s", target_device);
+    /* Writing to a disk is only allowed when explicitly requested */
+    if (boot_param_flag(cmdline, "unattended")) {
+        unattended = 1;
+        installer_log(LOG_WARNING,
+                      "Unattended installation requested, the target disk will be overwritten");
     }
+    
+    /* Parse target device if specified */
+    if (boot_param_option(cmdline, "target",
+                          target_device, sizeof(target_device)))
+        installer_log(LOG_INFO, "Target device: %s", target_device);
 }
 
 /*
@@ -130,6 +129,17 @@ static int installer_run(void)
     if (result != UI_RESULT_NEXT) {
         return INSTALL_CANCELLED;
     }
+    
+    /* The installer has no console input yet, so nothing is written to a
+       disk unless the boot command line asked for it explicitly.  */
+    if (!unattended) {
+        installer_log(LOG_INFO,
+                      "Stopping before any change is written to %s",
+                      installer_state.target_disk->device_name);
+        installer_log(LOG_INFO,
+                      "Boot with `install unattended target=DEVICE' to perform the installation");
+        return INSTALL_CANCELLED;
+    }
     installer_state.current_step = STEP_INSTALL;
     
     /* Perform installation */
@@ -157,21 +167,17 @@ static int installer_run(void)
 /*
  * Main entry point for the installer
  */
-int main(int argc, char *argv[])
+int main(int argc, char *argv[], int envc, char *envp[])
 {
     int result;
     
     installer_log(LOG_INFO, "c9o-mach Installer starting...");
     installer_log(LOG_INFO, "Version: %s", INSTALLER_VERSION);
     
-    /* Parse boot parameters */
-    extern char *kernel_cmdline;
-    parse_boot_params(kernel_cmdline);
-    
-    /* Override target device from command line if provided */
-    if (argc > 1 && argv[1][0] != '-') {
-        strncpy(target_device, argv[1], sizeof(target_device) - 1);
-    }
+    /* The kernel boot script passes the host and device master ports
+       followed by the kernel command line, see
+       packaging/iso/grub.cfg.install.template.  */
+    parse_boot_params(argc > 3 ? argv[3] : "");
     
     /* Initialize installer */
     result = installer_init();
@@ -179,6 +185,11 @@ int main(int argc, char *argv[])
         installer_log(LOG_ERROR, "Installer initialization failed");
         return 1;
     }
+    
+    /* Announce that the installer is up.  The ISO boot tests wait for
+       this line, see scripts/validate-iso.sh.  */
+    printf("%s: %s %s\n", INSTALLER_READY_MARKER,
+           INSTALLER_NAME, INSTALLER_VERSION);
     
     /* Run installation process */
     result = installer_run();
@@ -191,18 +202,25 @@ int main(int argc, char *argv[])
         case INSTALL_SUCCESS:
             installer_log(LOG_INFO, "Installation completed successfully");
             installer_log(LOG_INFO, "Please remove installation media and reboot");
-            return 0;
+            break;
             
         case INSTALL_CANCELLED:
-            installer_log(LOG_INFO, "Installation cancelled by user");
-            return 0;
+            installer_log(LOG_INFO, "Installation cancelled");
+            break;
             
         case INSTALL_FAILED:
             installer_log(LOG_ERROR, "Installation failed");
-            return 1;
+            break;
             
         default:
             installer_log(LOG_ERROR, "Unknown installation result: %d", result);
-            return 1;
+            break;
     }
+    
+    /* Returning from the bootstrap task reboots the machine, so wait
+       instead and let the user power the system down.  */
+    while (1)
+        msleep(1000);
+    
+    return result;
 }

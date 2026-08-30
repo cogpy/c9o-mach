@@ -11,14 +11,23 @@
 #ifndef _INIT_H_
 #define _INIT_H_
 
-#include <mach.h>
-#include <stdint.h>
-#include <stddef.h>
-#include <string.h>
+#include <testlib.h>
+#include <kern/boot_params.h>
+
+#include <mach_host.user.h>
+#include <mach_port.user.h>
 
 /* Version information */
 #define INIT_VERSION "1.0.0"
 #define INIT_NAME "c9o-mach init"
+
+/* Printed once the requested environment is up, and looked for by the
+   ISO boot tests (scripts/validate-iso.sh).  */
+#define INIT_READY_MARKER "c9o-mach-init-ready"
+
+/* Maximum number of services init can keep track of.  Init runs as the
+   bootstrap task in a freestanding environment, without a heap.  */
+#define INIT_MAX_SERVICES 16
 
 /* Logging levels */
 typedef enum {
@@ -28,13 +37,7 @@ typedef enum {
     LOG_ERROR
 } log_level_t;
 
-/* Boot modes */
-typedef enum {
-    BOOT_MODE_TYPE_NORMAL = 0,
-    BOOT_MODE_TYPE_LIVE,
-    BOOT_MODE_TYPE_INSTALL,
-    BOOT_MODE_TYPE_RESCUE
-} boot_mode_t;
+/* Boot modes are shared with the kernel, see <kern/boot_params.h>.  */
 
 /* Runlevels */
 typedef enum {
@@ -75,7 +78,7 @@ typedef struct service {
     int priority;               /* Start priority (lower = earlier) */
     mach_port_t task_port;      /* Task port if running */
     int pid;                    /* Process ID if applicable */
-    struct service *next;       /* Next service in list */
+    int used;                   /* Slot is in use */
 } service_t;
 
 /* Init process state */
@@ -85,8 +88,7 @@ typedef struct {
     runlevel_t runlevel;            /* Current runlevel */
     boot_mode_t boot_mode;          /* Boot mode */
     int single_user;                /* Single user mode flag */
-    service_t *services;            /* Registered services */
-    int service_count;              /* Number of services */
+    const char *cmdline;            /* Kernel command line */
 } init_state_t;
 
 /* Reboot flags */
@@ -96,7 +98,8 @@ typedef struct {
 /*
  * Logging functions
  */
-void init_log(log_level_t level, const char *fmt, ...);
+void init_log(log_level_t level, const char *fmt, ...)
+	__attribute__ ((format (printf, 2, 3)));
 
 /*
  * Service management (services.c)
@@ -121,12 +124,5 @@ void services_list(void);
 void init_shutdown(int reboot);
 void init_reboot(void);
 void init_halt(void);
-void init_poweroff(void);
-
-/*
- * Utility functions
- */
-int spawn_process(const char *command, mach_port_t *task_port);
-int wait_for_process(mach_port_t task_port);
 
 #endif /* _INIT_H_ */

@@ -34,6 +34,7 @@
 #include <mach/task_special_ports.h>
 #include <mach/vm_param.h>
 #include <ipc/ipc_init.h>
+#include <kern/boot_params.h>
 #include <kern/cpu_number.h>
 #include <kern/debug.h>
 #include <kern/gsync.h>
@@ -187,6 +188,9 @@ void setup_main(void)
 
 	/* Initialize console timestamps after time system is ready */
 	console_timestamp_init();
+
+	/* Determine the boot mode requested by the boot loader */
+	boot_params_init();
 
 	/* Initialize performance analysis framework */
 	perf_analysis_init();
